@@ -93,7 +93,7 @@ static int write_temp(const char *prefix, const char *data, char *out, size_t ou
     return 0;
 }
 
-static char *http_post(const char *url, const char *api_key, const char *body) {
+char *http_post(const char *url, const char *api_key, const char *body) {
     char body_path[64], hdr_path[64];
     if (write_temp("body", body, body_path, sizeof(body_path)) < 0) return NULL;
     char hdr[MAX_VALUE + 64];
@@ -199,7 +199,7 @@ static void response_free(Response *r) {
 }
 
 /* references avoid copying the full message array */
-static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
+char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
     cJSON *req = cJSON_CreateObject();
     cJSON_AddStringToObject(req, "model", cfg->model);
     cJSON_AddItemReferenceToObject(req, "messages", msgs);

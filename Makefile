@@ -12,13 +12,15 @@ else
   LDFLAGS = -lm
 endif
 
-# Single-file build (default)
-$(TARGET): src/subzeroclaw.c $(VENDOR)
-	$(CC) $(CFLAGS) -o $(TARGET) src/subzeroclaw.c $(VENDOR) $(LDFLAGS)
+# Build with mock/record module linked in. The non-weak llm_chat in
+# szc_mock.c overrides the weak default in subzeroclaw.c.
+$(TARGET): src/subzeroclaw.c src/szc_mock.c $(VENDOR)
+	$(CC) $(CFLAGS) -o $(TARGET) src/subzeroclaw.c src/szc_mock.c $(VENDOR) $(LDFLAGS)
 
-# Test: test.c includes subzeroclaw.c directly (SZC_TEST excludes main)
-test: src/test.c src/subzeroclaw.c $(VENDOR)
-	$(CC) $(CFLAGS) -o test_subzeroclaw src/test.c $(VENDOR) $(LDFLAGS)
+# Test: test.c includes subzeroclaw.c directly (SZC_TEST excludes main).
+# szc_mock.c is also linked so the override path is exercised.
+test: src/test.c src/subzeroclaw.c src/szc_mock.c $(VENDOR)
+	$(CC) $(CFLAGS) -o test_subzeroclaw src/test.c src/szc_mock.c $(VENDOR) $(LDFLAGS)
 	./test_subzeroclaw
 watchdog: src/watchdog.c
 	$(CC) $(CFLAGS) -o watchdog src/watchdog.c

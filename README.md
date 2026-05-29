@@ -2,11 +2,13 @@
   <img src="szc-logo.png" alt="SubZeroClaw" width="400">
 </p>
 
-# SubZeroClaw
+# SubZeroClaw — `mock` branch
+
+> **This is the `mock` branch.** It adds optional mock and record modes for offline development without touching the minimal core. The pristine ~450-line version lives on [`main`](../../tree/main). The runtime here is byte-for-byte identical when no mock/record env vars are set.
 
 > **WARNING: This software executes arbitrary shell commands with no safety checks, no confirmation prompts, no sandboxing, and no guardrails. The LLM decides what to run and the runtime runs it — `rm -rf /` included. There is nothing between the model's output and your system. If you don't understand what that means, do not use this. This is a bare agentic loop: execute the task, whatever it takes, nothing more, nothing less.**
 
-**~380 lines of C. 54KB binary. A skill-driven agentic daemon for edge hardware.**
+**~450 lines of C core + ~140 lines optional mock/record module. A skill-driven agentic daemon for edge hardware.**
 
 ```
 skill.md + LLM + shell + loop = autonomous agent
@@ -37,7 +39,7 @@ SubZeroClaw doesn't simplify their architecture. It ignores it and writes the lo
 |                   | SubZeroClaw  | ZeroClaw     | OpenClaw     |
 |-------------------|--------------|--------------|--------------|
 | Language          | C            | Rust         | TypeScript   |
-| Source            | ~380 lines   | ~15,000      | ~430,000     |
+| Source            | ~450 + 140   | ~15,000      | ~430,000     |
 | Binary            | 54 KB        | 3.4 MB       | 80+ MB       |
 | RAM (runtime)     | ~2 MB        | < 5 MB       | 80-120 MB    |
 | Compiles on Pi    | 0.5s         | OOM          | slow         |
@@ -67,12 +69,67 @@ No format spec. No skill registry. No trigger matching. Just plain text the LLM 
 
 The skills included in this repo (`skills/`) are just examples to show the format. They reference tools and paths specific to one setup. Don't use them as-is — write your own for your system, your tools, your workflow. The whole point is that a skill is just a markdown file you write in 30 seconds.
 
+## Mock and record modes
+
+Two opt-in modes for development without spending API calls. Both are triggered by env vars only — no CLI flags, no config changes, no runtime cost when unused.
+
+```bash
+# Replay canned LLM responses, no network, no API key needed
+SUBZEROCLAW_MOCK_SCRIPT=script.json ./subzeroclaw "deploy the app"
+
+# Record real API responses to a file (which is itself a replay-able mock script)
+SUBZEROCLAW_RECORD_SCRIPT=session.json ./subzeroclaw "deploy the app"
+```
+
+Both can be set at the same time — `MOCK` wins if both are present.
+
+### What gets mocked, what doesn't
+
+Only the LLM response is canned. Everything else — skills loading, shell execution, context compaction, logging — runs for real. If the canned response says "run `echo hello`", the shell really runs `echo hello`. The mock script is a transcript of the model's brain, not of the world.
+
+### Mock script format
+
+A JSON array of message objects. Each entry is one LLM turn, consumed in order. When the script runs out, the last entry repeats.
+
+```json
+[
+  {
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_1",
+        "type": "function",
+        "function": {
+          "name": "shell",
+          "arguments": "{\"command\": \"echo hello\"}"
+        }
+      }
+    ]
+  },
+  {
+    "content": "Done. The command printed hello."
+  }
+]
+```
+
+First entry: a tool call (`finish_reason` is inferred as `tool_calls` because `tool_calls` is non-empty). Second entry: a plain message (`finish_reason` becomes `stop`). The runtime treats this exactly like an OpenAI chat completion.
+
+### Recording
+
+Record mode wraps a real session and writes each LLM message to a file in mock-script format. You can replay the session afterwards by pointing `SUBZEROCLAW_MOCK_SCRIPT` at the same file. Useful for capturing a known-good run as a regression fixture.
+
+### How it works (no `#ifdef` in the core)
+
+The core `subzeroclaw.c` exposes `llm_chat` as a weak symbol. `src/szc_mock.c` provides a non-weak version that overrides it at link time. When the optional module is linked in (this branch's default), all LLM calls flow through it; the module checks the env vars on first call and routes to mock, record, or the real path accordingly.
+
+The core file gains nothing: no mock-specific fields in `Config`, no flag parsing in `main`, no `#ifdef` blocks. The diff between this branch and `main` is two `static` keywords removed (so the mock module can call `build_request` / `http_post`) plus the new `src/szc_mock.c` file and a Makefile line.
+
 ## Build
 
 ```bash
-make            # builds subzeroclaw (54KB)
+make            # builds subzeroclaw with the mock/record module linked in
 make watchdog   # builds watchdog (17KB)
-make test       # runs 16 tests
+make test       # runs 19 tests
 make install    # copies to ~/.local/bin/
 ```
 
@@ -156,8 +213,9 @@ No vector DB. No embeddings. One API call to compress context.
 
 ```
 src/
-├── subzeroclaw.c   ~380 lines  The entire runtime
-├── test.c                      16 tests
+├── subzeroclaw.c   ~450 lines  The entire core runtime
+├── szc_mock.c      ~140 lines  Optional mock/record (link-time override)
+├── test.c                      19 tests
 ├── watchdog.c       50 lines   Crash recovery + backoff
 ├── cJSON.c                     Vendored JSON parser
 └── cJSON.h
@@ -173,7 +231,7 @@ Every layer of "framework" between the model and the shell is complexity that ad
 
 OpenClaw solved the agentic loop with 430,000 lines of TypeScript. ZeroClaw re-solved it with 15,000 lines of Rust. Both are good — but both carry the weight of problems that only exist at platform scale: multi-tenancy, channel routing, identity portability, plugin registries.
 
-SubZeroClaw asks: what if the problem is just "one agent, one skill, one device"? Then the answer is ~380 readable lines of C.
+SubZeroClaw asks: what if the problem is just "one agent, one skill, one device"? Then the answer is ~450 readable lines of C. The mock/record module on this branch follows the same rule: it's a separate file you can drop or keep, linked into the binary without a single conditional in the core.
 
 ## License
 
