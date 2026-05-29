@@ -211,6 +211,21 @@ static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
     return json;
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+#define SZC_WEAK __attribute__((weak))
+#else
+#define SZC_WEAK
+#endif
+
+/* Weak so an optional module (e.g. szc_mock.c) can override at link time. */
+SZC_WEAK char *llm_chat(const Config *cfg, cJSON *msgs, cJSON *tools) {
+    char *rj = build_request(cfg, msgs, tools);
+    if (!rj) return NULL;
+    char *rb = http_post(cfg->endpoint, cfg->api_key, rj);
+    free(rj);
+    return rb;
+}
+
 static int parse_response(const char *body, Response *out) {
     memset(out, 0, sizeof(*out));
     cJSON *root = cJSON_Parse(body); if (!root) return -1;
@@ -276,9 +291,8 @@ static int compact_messages(const Config *cfg, cJSON *msgs, FILE *log) {
 
     cJSON *sm = cJSON_CreateArray();
     cJSON_AddItemToArray(sm, make_msg("user", prompt)); free(prompt);
-    char *rj = build_request(cfg, sm, NULL);
-    char *rb = http_post(cfg->endpoint, cfg->api_key, rj);
-    free(rj); cJSON_Delete(sm);
+    char *rb = llm_chat(cfg, sm, NULL);
+    cJSON_Delete(sm);
     if (!rb) return -1;
 
     Response resp;
@@ -343,9 +357,8 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
 
     for (int turn = 1; turn <= cfg->max_turns; turn++) {
         compact_messages(cfg, msgs, log);
-        char *rj = build_request(cfg, msgs, tools); if (!rj) return -1;
         fprintf(stderr, "[%d] %s...\n", turn, cfg->model);
-        char *rb = http_post(cfg->endpoint, cfg->api_key, rj); free(rj);
+        char *rb = llm_chat(cfg, msgs, tools);
         if (!rb) return -1;
         Response resp;
         if (parse_response(rb, &resp) != 0) { free(rb); return -1; }
