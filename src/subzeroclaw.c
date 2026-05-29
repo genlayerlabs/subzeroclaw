@@ -6,6 +6,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <dirent.h>
 #include <cjson/cJSON.h>
 
@@ -110,7 +111,12 @@ static char *http_post(const char *url, const char *api_key, const char *body) {
     char *buf = malloc(cap);
     while (buf && (n = fread(buf + len, 1, cap - len - 1, fp)) > 0) {
         len += n;
-        if (len + 1 >= cap) { cap *= 2; buf = realloc(buf, cap); }
+        if (len + 1 >= cap) {
+            cap *= 2;
+            char *nb = realloc(buf, cap);
+            if (!nb) { free(buf); buf = NULL; break; }
+            buf = nb;
+        }
     }
     if (buf) buf[len] = '\0';
     pclose(fp); unlink(body_path); unlink(hdr_path);
@@ -129,21 +135,29 @@ char *tool_execute(const char *name, const char *args_json) {
     cJSON *cmd_item = args ? cJSON_GetObjectItem(args, "command") : NULL;
     const char *cmd = (cmd_item && cJSON_IsString(cmd_item)) ? cmd_item->valuestring : NULL;
     if (!cmd) { if (args) cJSON_Delete(args); return strdup("error: missing 'command'"); }
-    /* Wrap command in braces to redirect stderr without breaking heredocs.
-       "cmd 2>&1" breaks heredocs; "{ cmd; } 2>&1" works correctly. */
+    /* Wrap as "{\n cmd \n} 2>&1": newline separators work for heredocs
+       (terminator must be alone on its line) and for commands ending in ';'.
+       The "; }" form breaks both. */
     size_t len = strlen(cmd);
     char *full = malloc(len + 16);
-    memcpy(full, "{ ", 2); memcpy(full + 2, cmd, len);
-    memcpy(full + 2 + len, "; } 2>&1", 9);
+    memcpy(full, "{\n", 2); memcpy(full + 2, cmd, len);
+    memcpy(full + 2 + len, "\n} 2>&1", 8);
     if (args) cJSON_Delete(args);
     FILE *fp = popen(full, "r"); free(full);
-    if (!fp) return strdup("error: popen failed");
-    char *out = malloc(MAX_OUTPUT);
-    size_t total = 0, n;
-    while ((n = fread(out + total, 1, MAX_OUTPUT - total - 1, fp)) > 0) {
-        total += n; if (total >= MAX_OUTPUT - 1) break;
+    if (!fp) return strdup("[exit:-1] error: popen failed");
+    /* Reserve 16 bytes at the head for the "[exit:N] " prefix */
+    char *out = malloc(MAX_OUTPUT + 16);
+    size_t total = 16, n;
+    while ((n = fread(out + total, 1, MAX_OUTPUT - 1, fp)) > 0) {
+        total += n; if (total >= MAX_OUTPUT + 15) break;
     }
-    out[total] = '\0'; pclose(fp);
+    out[total] = '\0';
+    int status = pclose(fp);
+    int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    char prefix[16];
+    int plen = snprintf(prefix, sizeof(prefix), "[exit:%d] ", code);
+    memmove(out + plen, out + 16, total - 16 + 1);
+    memcpy(out, prefix, plen);
     return out;
 }
 
@@ -354,6 +368,27 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
 }
 
 #ifndef SZC_TEST
+/* Grow-as-needed stdin reader. Replaces fgets()+4KB buffer, which
+   silently truncated long pasted prompts. */
+static char *read_line(void) {
+    size_t cap = 65536, len = 0;
+    char *buf = malloc(cap);
+    if (!buf) return NULL;
+    int c;
+    while ((c = fgetc(stdin)) != EOF && c != '\n') {
+        if (len + 1 >= cap) {
+            cap *= 2;
+            char *nb = realloc(buf, cap);
+            if (!nb) { free(buf); return NULL; }
+            buf = nb;
+        }
+        buf[len++] = c;
+    }
+    if (c == EOF && len == 0) { free(buf); return NULL; }
+    buf[len] = '\0';
+    return buf;
+}
+
 int main(int argc, char **argv) {
     if (argc > 1 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h"))) {
         fprintf(stderr, "SubZeroClaw — skill-driven agentic runtime\n"
@@ -394,15 +429,16 @@ int main(int argc, char **argv) {
         *p = '\0';
         rc = agent_run(&cfg, msgs, tools, input, log);
     } else {
-        char input[4096];
         for (;;) {
             printf("> "); fflush(stdout);
-            if (!fgets(input, sizeof(input), stdin)) break;
-            size_t len = strlen(input);
-            while (len && strchr("\n\r", input[len - 1])) input[--len] = '\0';
-            if (!len) continue;
-            if (!strcmp(input, "/quit") || !strcmp(input, "/exit")) break;
+            char *input = read_line();
+            if (!input) break;
+            if (!input[0]) { free(input); continue; }
+            if (!strcmp(input, "/quit") || !strcmp(input, "/exit")) {
+                free(input); break;
+            }
             agent_run(&cfg, msgs, tools, input, log);
+            free(input);
             printf("\n<<TURN_COMPLETE>>\n");
             fflush(stdout);
         }

@@ -56,6 +56,34 @@ static void test_shell_bad_args(void) {
     free(r);
 }
 
+static void test_shell_heredoc(void) {
+    TEST("shell: heredoc not corrupted by wrap");
+    char *r = tool_execute("shell",
+        "{\"command\": \"cat <<'END'\\nhello_heredoc\\nEND\"}");
+    assert(r);
+    if (strstr(r, "hello_heredoc")) PASS();
+    else FAIL(r);
+    free(r);
+}
+
+static void test_shell_exit_code_ok(void) {
+    TEST("shell: exit code prefix on success");
+    char *r = tool_execute("shell", "{\"command\": \"true\"}");
+    assert(r);
+    if (strstr(r, "[exit:0]") == r) PASS();
+    else FAIL(r);
+    free(r);
+}
+
+static void test_shell_exit_code_fail(void) {
+    TEST("shell: exit code prefix on failure");
+    char *r = tool_execute("shell", "{\"command\": \"exit 42\"}");
+    assert(r);
+    if (strstr(r, "[exit:42]") == r) PASS();
+    else FAIL(r);
+    free(r);
+}
+
 /* ======== JSON / TOOLS DEFINITION TESTS ======== */
 
 static void test_tools_definitions(void) {
@@ -270,6 +298,9 @@ int main(void) {
     test_shell_stderr();
     test_unknown_tool();
     test_shell_bad_args();
+    test_shell_heredoc();
+    test_shell_exit_code_ok();
+    test_shell_exit_code_fail();
     test_tools_definitions();
     test_parse_stop_response();
     test_parse_tool_calls_response();
