@@ -202,6 +202,11 @@ static void response_free(Response *r) {
 static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
     cJSON *req = cJSON_CreateObject();
     cJSON_AddStringToObject(req, "model", cfg->model);
+    /* max_tokens is optional in the OpenAI spec, but some OpenAI-compatible
+       routers (e.g. the genlayer llm-policy shim behind router.ygr.ai) reject
+       requests that omit it with "no_candidates"/"exhausted". Sending an
+       explicit ceiling is also sane hardening against runaway generations. */
+    cJSON_AddNumberToObject(req, "max_tokens", 4096);
     cJSON_AddItemReferenceToObject(req, "messages", msgs);
     if (tools) cJSON_AddItemReferenceToObject(req, "tools", tools);
     char *json = cJSON_PrintUnformatted(req);
