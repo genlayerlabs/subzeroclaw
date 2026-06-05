@@ -202,6 +202,9 @@ static void response_free(Response *r) {
 static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
     cJSON *req = cJSON_CreateObject();
     cJSON_AddStringToObject(req, "model", cfg->model);
+    /* Some routers (e.g. the ygr llm-router shim) REQUIRE max_tokens and reject
+       requests without it ("exhausted"/"no_candidates"). Always send one. */
+    cJSON_AddNumberToObject(req, "max_tokens", 4096);
     cJSON_AddItemReferenceToObject(req, "messages", msgs);
     if (tools) cJSON_AddItemReferenceToObject(req, "tools", tools);
     char *json = cJSON_PrintUnformatted(req);
