@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SubZeroClaw — an agent small enough to run anywhere</title>
+<meta name="description" content="SubZeroClaw is a minimal agent runtime in C — ~380 lines, a 54KB binary, ~2MB RAM. No framework, just the loop. Small enough to run anywhere: edge devices, local automation, and large-scale swarms." />
+<link rel="canonical" href="https://genlayerlabs.github.io/subzeroclaw/" />
+<meta name="theme-color" content="#E9E0D2" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="SubZeroClaw — an agent small enough to run anywhere" />
+<meta property="og:description" content="A minimal agent runtime in C. ~380 lines · 54KB · ~2MB RAM · 2 deps. No framework, just the loop." />
+<meta property="og:url" content="https://genlayerlabs.github.io/subzeroclaw/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="SubZeroClaw — an agent small enough to run anywhere" />
+<meta name="twitter:description" content="A minimal agent runtime in C. No framework, just the loop." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='10' fill='%23A84E36'/%3E%3Ccircle cx='12.5' cy='27.5' r='4.2' fill='%2326241F'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --sand:#E9E0D2; --ink:#33301f; --ink-2:#6b6450; --ink-3:#9a9079;
+  --clay:#A84E36; --line:#dcd2bd; --btn:#33301f; --hole:#0b0b0e; --sage:#6E7B5A;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--sand);color:var(--ink);font-family:"Instrument Sans",sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+::selection{background:var(--clay);color:#fff}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--clay);outline-offset:3px;border-radius:4px}
+.wrap{width:100%;max-width:1180px;margin:0 auto;padding:0 clamp(24px,5vw,64px)}
+
+/* nav */
+nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(8px);background:color-mix(in srgb,var(--sand) 80%,transparent)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;height:96px}
+.brand{display:flex;align-items:center;gap:14px;font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:21px;letter-spacing:-.02em}
+.brand svg{width:64px;height:64px}
+.nav-r{display:flex;align-items:center;gap:24px;font-size:14.5px;color:var(--ink-2)}
+.nav-r a{transition:color .2s}
+.nav-r a:hover{color:var(--ink)}
+.nav-r .pill{font-family:"JetBrains Mono",monospace;font-size:11.5px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:var(--ink-2)}
+
+/* hero */
+.hero{flex:1;display:flex;align-items:center;padding:clamp(20px,4vw,40px) 0}
+.grid{display:grid;grid-template-columns:1fr 1.08fr;align-items:center;gap:clamp(2rem,5vw,5rem);width:100%}
+h1{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:clamp(2.4rem,6vw,5rem);line-height:1;letter-spacing:-.028em;margin:0 0 clamp(1.7rem,4vh,2.4rem);text-transform:lowercase}
+h1 em{font-style:normal;color:var(--clay)}
+.copy{display:inline-flex;align-items:center;gap:.9rem;background:var(--btn);color:var(--sand);border:none;border-radius:13px;padding:.95rem 1.1rem .95rem 1.25rem;font-family:"JetBrains Mono",monospace;font-size:clamp(.78rem,1.3vw,.95rem);cursor:pointer;transition:transform .15s,background .15s;max-width:100%}
+.copy:hover{transform:translateY(-2px);background:#272411}
+.copy .prompt{color:var(--clay)}
+.copy .cmd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.copy .lbl{flex:none;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;background:var(--sage);color:var(--sand);padding:.4rem .75rem;border-radius:8px;transition:.2s}
+.copy.done .lbl{background:var(--clay)}
+.stats{margin-top:clamp(1.3rem,3.5vh,1.9rem);font-family:"JetBrains Mono",monospace;font-size:.78rem;color:var(--ink-3);letter-spacing:.02em}
+
+/* orbit */
+.orbit-stage{justify-self:center;width:min(64vh,50vw,600px);aspect-ratio:1;position:relative;z-index:5;pointer-events:none}
+.orbit-stage svg{width:100%;height:100%;overflow:visible}
+.bh{fill:var(--hole)}
+
+/* footer */
+footer{border-top:1px solid var(--line)}
+.foot-in{display:flex;align-items:center;justify-content:space-between;gap:18px;height:58px;flex-wrap:wrap}
+.gl{display:flex;align-items:center;gap:8px;color:var(--ink-3);font-size:12px;font-weight:500;transition:color .2s}
+.gl:hover{color:var(--ink-2)}
+.gl svg{height:15px;width:auto;opacity:.85}
+.foot-c{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink-3);letter-spacing:.02em}
+
+@media(max-width:820px){
+  .grid{grid-template-columns:1fr;gap:2rem}
+  .orbit-stage{order:-1;width:min(40vh,320px)}
+  .nav-r .hide{display:none}
+}
+@media(prefers-reduced-motion:reduce){.bh{display:none}}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap nav-in">
+  <a class="brand" href="./" aria-label="SubZeroClaw home">
+    <svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="10" fill="#A84E36"/><circle cx="12.5" cy="27.5" r="4.2" fill="#26241F"/></svg>
+    SubZeroClaw
+  </a>
+  <div class="nav-r">
+    <span class="pill hide">v0.1 · MIT</span>
+    <a href="https://github.com/genlayerlabs/subzeroclaw#readme">Docs</a>
+    <a href="https://github.com/genlayerlabs/subzeroclaw">GitHub ↗</a>
+  </div>
+</div></nav>
+
+<main class="hero"><div class="wrap"><div class="grid">
+  <div>
+    <h1>an agent small enough to <em>run anywhere</em></h1>
+    <button class="copy" type="button" data-cmd="git clone https://github.com/genlayerlabs/subzeroclaw" aria-label="Copy git clone command">
+      <span class="prompt" aria-hidden="true">$</span>
+      <span class="cmd">git clone github.com/genlayerlabs/subzeroclaw</span>
+      <span class="lbl" aria-live="polite">copy</span>
+    </button>
+    <p class="stats">380 lines of C · 54 KB · ~2 MB RAM · 2 deps</p>
+  </div>
+
+  <div class="orbit-stage">
+    <svg viewBox="25 25 50 50" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A black hole on an eccentric orbit around a sun: it slows and shrinks far away, then accelerates and grows as it whips past the sun, passing behind it and back in front.">
+      <defs>
+        <radialGradient id="sun" cx="38%" cy="33%" r="78%">
+          <stop offset="0%" stop-color="#C9633F"/><stop offset="60%" stop-color="#A84E36"/><stop offset="100%" stop-color="#7E3A22"/>
+        </radialGradient>
+      </defs>
+      <circle class="bh" id="bhBack" r="3.6" cx="50" cy="50"/>
+      <circle cx="50" cy="50" r="15" fill="url(#sun)"/>
+      <circle class="bh" id="bhFront" r="3.6" cx="50" cy="50"/>
+    </svg>
+  </div>
+</div></div></main>
+
+<footer><div class="wrap foot-in">
+  <a class="gl" href="https://genlayer.com" aria-label="GenLayer Labs">
+    <svg viewBox="0 0 97.76 91.93" fill="currentColor" aria-hidden="true">
+      <polygon points="44.26 32.35 27.72 67.12 43.29 74.9 0 91.93 44.26 0 44.26 32.35"/>
+      <polygon points="53.5 32.35 70.04 67.12 54.47 74.9 97.76 91.93 53.5 0 53.5 32.35"/>
+      <polygon points="48.64 43.78 58.33 62.94 48.64 67.69 39.47 62.92 48.64 43.78"/>
+    </svg>
+    GenLayer Labs
+  </a>
+  <div class="foot-c">© 2026 GenLayer Labs · MIT License</div>
+</div></footer>
+
+<script>
+/* Black hole on a real Kepler orbit (sun at a focus), ¾ view.
+   Position solved per-frame via Newton-Raphson on Kepler's equation so velocity
+   and apparent size follow the physics: slow+small at aphelion, fast+large at perihelion.
+   depth=sunR/a ties perspective scale to the size of the sun. */
+(function(){
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) return;
+  var a=28.5, e=0.09, T=13.0, b=a*Math.sqrt(1-e*e),
+      inc=64*Math.PI/180, ci=Math.cos(inc), si=Math.sin(inc),
+      cw=1, sw=0, moon=3.6, depth=0.526, C=50;
+  var back=document.getElementById('bhBack'), front=document.getElementById('bhFront');
+  if(!back||!front) return;
+  function frame(now){
+    var M=2*Math.PI*((now/1000)/T % 1), E=M;
+    for(var k=0;k<6;k++){ E=E-(E-e*Math.sin(E)-M)/(1-e*Math.cos(E)); }
+    var ox=a*(Math.cos(E)-e), oy=b*Math.sin(E);
+    var sx=ox, sy=oy*ci, z=oy*si;
+    var x=C+sx*cw-sy*sw, y=C+sx*sw+sy*cw;
+    var r=moon*(1+depth*z/a);
+    var m=z>0?front:back, other=z>0?back:front;
+    m.setAttribute('cx',x); m.setAttribute('cy',y); m.setAttribute('r',r); m.style.display='block';
+    other.style.display='none';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+/* Click-to-copy the clone command */
+(function(){
+  var el=document.querySelector('.copy'); if(!el) return;
+  var lbl=el.querySelector('.lbl');
+  el.addEventListener('click', function(){
+    var txt=el.getAttribute('data-cmd')||'';
+    var done=function(){
+      el.classList.add('done'); if(lbl) lbl.textContent='copied ✓';
+      setTimeout(function(){ el.classList.remove('done'); if(lbl) lbl.textContent='copy'; }, 1600);
+    };
+    function fallback(){
+      try{ var ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }catch(e){}
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done, function(){ fallback(); done(); });
+    } else { fallback(); done(); }
+  });
+})();
+</script>
+</body>
+</html>
