@@ -1,0 +1,5 @@
+# SubZeroClaw — all crawlers welcome, including AI assistants
+User-agent: *
+Allow: /
+
+Sitemap: https://subzeroclaw.com/sitemap.xml

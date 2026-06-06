@@ -24,4 +24,4 @@ SubZeroClaw is an anti-framework. It does one thing — connect an LLM to a shel
 - [README](https://github.com/genlayerlabs/subzeroclaw#readme): full documentation — quickstart, setup, config reference, troubleshooting, philosophy
 - [Source](https://github.com/genlayerlabs/subzeroclaw/blob/main/src/subzeroclaw.c): the entire runtime in one readable file
 - [Contributing](https://github.com/genlayerlabs/subzeroclaw/blob/main/CONTRIBUTING.md): the anti-framework contribution model (reduce complexity, or prove a runtime limitation)
-- [Landing page](https://genlayerlabs.github.io/subzeroclaw/)
+- [Landing page](https://subzeroclaw.com/)
