@@ -26,6 +26,24 @@ You write a skill as a markdown file. You point SubZeroClaw at it. It calls an L
 
 The agent reads the skill into its system prompt, receives input, and autonomously calls tools until the task is complete. When context gets full, it compacts old messages into a summary and keeps going.
 
+## Quickstart
+
+```bash
+git clone https://github.com/genlayerlabs/subzeroclaw
+cd subzeroclaw
+make                          # builds the 54KB binary in ~0.5s
+
+mkdir -p ~/.subzeroclaw/skills
+cat > ~/.subzeroclaw/config << 'EOF'
+api_key = "sk-or-your-openrouter-key"
+model = "minimax/minimax-m2.5"
+EOF
+
+./subzeroclaw "check disk usage and clean tmp if over 80%"
+```
+
+Clone, build, drop in an [OpenRouter](https://openrouter.ai) key, run. No daemon to register, no service to start. You need `gcc` to build and `curl` at runtime — everything else is in the box.
+
 ## Why not just use ZeroClaw / OpenClaw?
 
 [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) rewrites [OpenClaw](https://github.com/openclaw) in Rust. It's good software — but it inherits the architecture of the thing it's replacing: trait systems, channel adapters, observer patterns, identity formats, security layers. All solutions to problems that exist when you're building a multi-user, multi-channel platform.
@@ -151,6 +169,15 @@ No vector DB. No embeddings. One API call to compress context.
 | `log_dir` | `~/.subzeroclaw/logs` | Session log directory |
 | `max_turns` | 200 | Max tool-call loops per input |
 | `max_messages` | 40 | Trigger context compaction |
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `curl: command not found` or no response from the model | The runtime shells out to `curl` for API calls. Install it: `sudo apt install curl`. |
+| `401 Unauthorized` from the endpoint | Missing or invalid key. Check `api_key` in `~/.subzeroclaw/config` or the `SUBZEROCLAW_API_KEY` env var. |
+| Model never calls tools / loops without progress | Use a `model` that supports tool calling — not every OpenRouter model does. |
+| `make` fails on a fresh Pi | Install a compiler: `sudo apt install build-essential`. The vendored cJSON is used automatically when `libcjson-dev` is absent. |
 
 ## Source
 
