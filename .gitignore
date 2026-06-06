@@ -19,3 +19,6 @@ watchdog
 
 # macOS
 .DS_Store
+
+# Tooling
+.superpowers/

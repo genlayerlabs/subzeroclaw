@@ -1,0 +1,27 @@
+# SubZeroClaw
+
+> A minimal agentic runtime written in C: ~380 lines of source, a 54KB binary, ~2MB RAM at runtime. One skill file + one LLM + one shell loop. No framework, no plugins, no adapters. Small enough to run anywhere — edge devices, Raspberry Pi, local automation, and large-scale agent swarms.
+
+SubZeroClaw connects an LLM to a shell and loops: it reads a skill (a plain markdown file), calls the model, runs the one tool the model asks for (the shell), and repeats until the task is done. Because the only tool is the shell, any CLI you already have installed (git, curl, ffmpeg, jq, rsync, ...) is immediately available to the agent — there are no integrations to build. When the message history grows past a limit, it compacts old messages into a summary and continues.
+
+## Facts
+
+- Language: C (~380 lines of runtime in a single file)
+- Binary size: 54 KB
+- RAM at runtime: ~2 MB
+- Dependencies: curl (called via the shell), cJSON (vendored fallback if libcjson is absent)
+- License: MIT
+- Compiles on a Raspberry Pi in ~0.5s
+- Provider: any OpenAI-compatible endpoint (defaults to OpenRouter)
+- Maintained by GenLayer Labs
+
+## Philosophy
+
+SubZeroClaw is an anti-framework. It does one thing — connect an LLM to a shell and loop — and deliberately omits plugin systems, middleware, channel adapters, and security layers, because those solve multi-user platform problems that a single-agent-single-device tool does not have. It follows the Unix philosophy: the shell is the integration layer, so the runtime never needs to know about git, email, or HTTP.
+
+## Docs
+
+- [README](https://github.com/genlayerlabs/subzeroclaw#readme): full documentation — quickstart, setup, config reference, troubleshooting, philosophy
+- [Source](https://github.com/genlayerlabs/subzeroclaw/blob/main/src/subzeroclaw.c): the entire runtime in one readable file
+- [Contributing](https://github.com/genlayerlabs/subzeroclaw/blob/main/CONTRIBUTING.md): the anti-framework contribution model (reduce complexity, or prove a runtime limitation)
+- [Landing page](https://subzeroclaw.com/)
