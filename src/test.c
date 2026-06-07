@@ -84,48 +84,52 @@ static void test_shell_exit_code_fail(void) {
     free(r);
 }
 
-/* ======== STDIN TURN DECODING TESTS ======== */
+/* ======== STDIN TURN FRAMING TESTS ======== */
 
-/* The orchestrator escapes each turn so one logical message is one physical
-   stdin line (backslash -> "\\", newline -> "\n"); we decode it back here.
-   Regression guard for the restart-flood bug where a multi-line rehydration
-   preamble fanned out into one LLM turn (and one reply) per line. */
-static void test_unescape_newline_one_turn(void) {
-    TEST("unescape_turn: \\n decodes to real newlines");
-    char buf[256];
-    /* wire form: literal backslash-n between the lines (one physical line) */
-    strcpy(buf, "[From orchestrator] line1\\nline2\\nline3");
-    unescape_turn(buf);
-    if (strcmp(buf, "[From orchestrator] line1\nline2\nline3") == 0) PASS();
-    else FAIL(buf);
+/* A turn is framed by a delimiter, not by escaping its content: '\0' for a
+   driving program (pipe/FIFO), '\n' for a human at a tty. read_turn must hand
+   back the bytes between delimiters completely verbatim. Regression guard for
+   the restart-flood bug where a multi-line preamble fanned out into one LLM
+   turn (and one reply) per line. */
+static void test_turn_nul_keeps_newlines_one_turn(void) {
+    TEST("read_turn: NUL-framed multi-line stays one turn");
+    /* one turn carrying real newlines, ended by NUL, then a second turn */
+    FILE *f = fmemopen("line1\nline2\nline3\0second", 24, "r");
+    char *a = read_turn(f, '\0');
+    char *b = read_turn(f, '\0');
+    if (a && b && strcmp(a, "line1\nline2\nline3") == 0
+              && strcmp(b, "second") == 0) PASS();
+    else FAIL(a ? a : "(null)");
+    free(a); free(b); if (f) fclose(f);
 }
 
-static void test_unescape_literal_backslash(void) {
-    TEST("unescape_turn: \\\\ preserves a real backslash");
-    char buf[256];
-    /* wire form for user-typed "a\nb" (backslash, n) -> "a\\nb" on the wire */
-    strcpy(buf, "a\\\\nb");
-    unescape_turn(buf);
-    if (strcmp(buf, "a\\nb") == 0) PASS();   /* a, backslash, n, b — NOT a newline */
-    else FAIL(buf);
+static void test_turn_content_verbatim(void) {
+    TEST("read_turn: backslashes passed through verbatim");
+    /* "a\nb" as typed (backslash, n) must NOT become a newline */
+    FILE *f = fmemopen("a\\nb\0", 5, "r");
+    char *r = read_turn(f, '\0');
+    if (r && strcmp(r, "a\\nb") == 0) PASS();   /* a, backslash, n, b */
+    else FAIL(r ? r : "(null)");
+    free(r); if (f) fclose(f);
 }
 
-static void test_unescape_no_escapes(void) {
-    TEST("unescape_turn: plain text unchanged");
-    char buf[256];
-    strcpy(buf, "[From orchestrator] hello, what's live?");
-    unescape_turn(buf);
-    if (strcmp(buf, "[From orchestrator] hello, what's live?") == 0) PASS();
-    else FAIL(buf);
+static void test_turn_newline_framed_tty(void) {
+    TEST("read_turn: newline-framed turns (tty path)");
+    FILE *f = fmemopen("first\nsecond\n", 13, "r");
+    char *a = read_turn(f, '\n');
+    char *b = read_turn(f, '\n');
+    if (a && b && strcmp(a, "first") == 0 && strcmp(b, "second") == 0) PASS();
+    else FAIL(a ? a : "(null)");
+    free(a); free(b); if (f) fclose(f);
 }
 
-static void test_unescape_trailing_backslash(void) {
-    TEST("unescape_turn: lone trailing backslash kept");
-    char buf[256];
-    strcpy(buf, "ends with a backslash\\");
-    unescape_turn(buf);
-    if (strcmp(buf, "ends with a backslash\\") == 0) PASS();
-    else FAIL(buf);
+static void test_turn_eof_empty_is_null(void) {
+    TEST("read_turn: EOF with no bytes returns NULL");
+    FILE *f = fmemopen("", 0, "r");
+    char *r = read_turn(f, '\0');
+    if (r == NULL) PASS();
+    else FAIL(r);
+    free(r); if (f) fclose(f);
 }
 
 /* ======== JSON / TOOLS DEFINITION TESTS ======== */
@@ -345,10 +349,10 @@ int main(void) {
     test_shell_heredoc();
     test_shell_exit_code_ok();
     test_shell_exit_code_fail();
-    test_unescape_newline_one_turn();
-    test_unescape_literal_backslash();
-    test_unescape_no_escapes();
-    test_unescape_trailing_backslash();
+    test_turn_nul_keeps_newlines_one_turn();
+    test_turn_content_verbatim();
+    test_turn_newline_framed_tty();
+    test_turn_eof_empty_is_null();
     test_tools_definitions();
     test_parse_stop_response();
     test_parse_tool_calls_response();
