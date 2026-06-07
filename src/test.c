@@ -84,6 +84,50 @@ static void test_shell_exit_code_fail(void) {
     free(r);
 }
 
+/* ======== STDIN TURN DECODING TESTS ======== */
+
+/* The orchestrator escapes each turn so one logical message is one physical
+   stdin line (backslash -> "\\", newline -> "\n"); we decode it back here.
+   Regression guard for the restart-flood bug where a multi-line rehydration
+   preamble fanned out into one LLM turn (and one reply) per line. */
+static void test_unescape_newline_one_turn(void) {
+    TEST("unescape_turn: \\n decodes to real newlines");
+    char buf[256];
+    /* wire form: literal backslash-n between the lines (one physical line) */
+    strcpy(buf, "[From orchestrator] line1\\nline2\\nline3");
+    unescape_turn(buf);
+    if (strcmp(buf, "[From orchestrator] line1\nline2\nline3") == 0) PASS();
+    else FAIL(buf);
+}
+
+static void test_unescape_literal_backslash(void) {
+    TEST("unescape_turn: \\\\ preserves a real backslash");
+    char buf[256];
+    /* wire form for user-typed "a\nb" (backslash, n) -> "a\\nb" on the wire */
+    strcpy(buf, "a\\\\nb");
+    unescape_turn(buf);
+    if (strcmp(buf, "a\\nb") == 0) PASS();   /* a, backslash, n, b — NOT a newline */
+    else FAIL(buf);
+}
+
+static void test_unescape_no_escapes(void) {
+    TEST("unescape_turn: plain text unchanged");
+    char buf[256];
+    strcpy(buf, "[From orchestrator] hello, what's live?");
+    unescape_turn(buf);
+    if (strcmp(buf, "[From orchestrator] hello, what's live?") == 0) PASS();
+    else FAIL(buf);
+}
+
+static void test_unescape_trailing_backslash(void) {
+    TEST("unescape_turn: lone trailing backslash kept");
+    char buf[256];
+    strcpy(buf, "ends with a backslash\\");
+    unescape_turn(buf);
+    if (strcmp(buf, "ends with a backslash\\") == 0) PASS();
+    else FAIL(buf);
+}
+
 /* ======== JSON / TOOLS DEFINITION TESTS ======== */
 
 static void test_tools_definitions(void) {
@@ -301,6 +345,10 @@ int main(void) {
     test_shell_heredoc();
     test_shell_exit_code_ok();
     test_shell_exit_code_fail();
+    test_unescape_newline_one_turn();
+    test_unescape_literal_backslash();
+    test_unescape_no_escapes();
+    test_unescape_trailing_backslash();
     test_tools_definitions();
     test_parse_stop_response();
     test_parse_tool_calls_response();

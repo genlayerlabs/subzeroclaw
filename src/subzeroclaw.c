@@ -380,6 +380,22 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
     return -1;
 }
 
+/* One stdin line = one turn. A driving program (non-tty stdin) sends a turn as a
+   single line with newlines escaped (\\ and \n) so a multi-line message stays one
+   turn instead of fanning out into one turn per line. Decode them back here, in
+   place. Unknown "\x" is kept verbatim so stray backslashes survive. */
+void unescape_turn(char *s) {
+    char *r = s, *w = s;
+    while (*r) {
+        if (*r == '\\' && r[1]) {
+            if (r[1] == 'n')  { *w++ = '\n'; r += 2; continue; }
+            if (r[1] == '\\') { *w++ = '\\'; r += 2; continue; }
+        }
+        *w++ = *r++;
+    }
+    *w = '\0';
+}
+
 #ifndef SZC_TEST
 /* Grow-as-needed stdin reader. Replaces fgets()+4KB buffer, which
    silently truncated long pasted prompts. */
@@ -442,10 +458,15 @@ int main(int argc, char **argv) {
         *p = '\0';
         rc = agent_run(&cfg, msgs, tools, input, log);
     } else {
+        /* Interactive (tty) stdin is left verbatim so a human can type literal
+           backslashes/code; a driving program (pipe/FIFO) speaks the escaped
+           one-line-per-turn protocol, which we decode (see unescape_turn). */
+        int piped = !isatty(STDIN_FILENO);
         for (;;) {
             printf("> "); fflush(stdout);
             char *input = read_line();
             if (!input) break;
+            if (piped) unescape_turn(input);
             if (!input[0]) { free(input); continue; }
             if (!strcmp(input, "/quit") || !strcmp(input, "/exit")) {
                 free(input); break;
