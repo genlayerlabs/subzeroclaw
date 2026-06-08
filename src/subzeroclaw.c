@@ -380,15 +380,21 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
     return -1;
 }
 
-#ifndef SZC_TEST
-/* Grow-as-needed stdin reader. Replaces fgets()+4KB buffer, which
-   silently truncated long pasted prompts. */
-static char *read_line(void) {
+/* Read one turn from f, terminated by `delim`. Grows as needed (replaces an
+   fgets()+4KB buffer that silently truncated long pasted prompts). Returns NULL
+   at EOF with no bytes read.
+
+   The delimiter frames turns *without* touching their content: a human at a tty
+   uses '\n' (one typed line = one turn); a driving program (non-tty stdin) uses
+   '\0', which a turn — being text — can never contain, so a multi-line message
+   survives verbatim as a single turn instead of fanning out into one turn (and
+   one LLM call) per line. No escaping, no reinterpretation of backslashes. */
+static char *read_turn(FILE *f, int delim) {
     size_t cap = 65536, len = 0;
     char *buf = malloc(cap);
     if (!buf) return NULL;
     int c;
-    while ((c = fgetc(stdin)) != EOF && c != '\n') {
+    while ((c = fgetc(f)) != EOF && c != delim) {
         if (len + 1 >= cap) {
             cap *= 2;
             char *nb = realloc(buf, cap);
@@ -402,6 +408,7 @@ static char *read_line(void) {
     return buf;
 }
 
+#ifndef SZC_TEST
 int main(int argc, char **argv) {
     if (argc > 1 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h"))) {
         fprintf(stderr, "SubZeroClaw — skill-driven agentic runtime\n"
@@ -442,9 +449,13 @@ int main(int argc, char **argv) {
         *p = '\0';
         rc = agent_run(&cfg, msgs, tools, input, log);
     } else {
+        /* A human at a tty ends a turn with Enter ('\n'); a driving program
+           (pipe/FIFO) ends each turn with a NUL byte, letting one turn carry
+           newlines verbatim instead of fanning out per line (see read_turn). */
+        int delim = isatty(STDIN_FILENO) ? '\n' : '\0';
         for (;;) {
             printf("> "); fflush(stdout);
-            char *input = read_line();
+            char *input = read_turn(stdin, delim);
             if (!input) break;
             if (!input[0]) { free(input); continue; }
             if (!strcmp(input, "/quit") || !strcmp(input, "/exit")) {
