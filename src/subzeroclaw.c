@@ -432,6 +432,10 @@ int main(int argc, char **argv) {
     char lp[600]; snprintf(lp, sizeof(lp), "%s/%s.txt", cfg.log_dir, sid);
     FILE *log = fopen(lp, "a");
     if (log) { time_t now = time(NULL); fprintf(log, "=== %s %s", sid, ctime(&now)); fflush(log); }
+    /* The system prompt (base prompt + concatenated skills) is the part of the
+       context the log could never reconstruct — two sessions with different
+       skill dirs would otherwise produce identical-looking logs. */
+    log_write(log, "SYSTEM", sysprompt);
 
     cJSON *msgs = cJSON_CreateArray();
     cJSON_AddItemToArray(msgs, make_msg("system", sysprompt));
