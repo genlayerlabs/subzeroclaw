@@ -202,6 +202,8 @@ static void response_free(Response *r) {
 static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
     cJSON *req = cJSON_CreateObject();
     cJSON_AddStringToObject(req, "model", cfg->model);
+    const char *pol = getenv("SUBZEROCLAW_POLICY_IR");  /* optional router policy JSON; unset = ignored */
+    if (pol && *pol) { cJSON *p = cJSON_Parse(pol); if (p) cJSON_AddItemToObject(req, "policy_ir", p); }
     cJSON_AddItemReferenceToObject(req, "messages", msgs);
     if (tools) cJSON_AddItemReferenceToObject(req, "tools", tools);
     char *json = cJSON_PrintUnformatted(req);

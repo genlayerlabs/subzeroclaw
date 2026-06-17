@@ -121,6 +121,7 @@ Environment variables override the config file:
 SUBZEROCLAW_API_KEY
 SUBZEROCLAW_MODEL
 SUBZEROCLAW_ENDPOINT
+SUBZEROCLAW_POLICY_IR   # optional: JSON policy_ir merged into each request (for policy-routing endpoints)
 ```
 
 ## Usage
