@@ -303,6 +303,60 @@ static void test_build_request(void) {
     cJSON_Delete(msgs); cJSON_Delete(tools);
 }
 
+static void test_build_request_extra_merge(void) {
+    TEST("build_request: REQUEST_EXTRA merges, override wins");
+    Config cfg; memset(&cfg, 0, sizeof(cfg));
+    snprintf(cfg.model, MAX_VALUE, "base-model");
+    snprintf(cfg.request_extra, MAX_EXTRA,
+        "{\"temperature\": 0.5, \"model\": \"override-model\"}");
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON_AddItemToArray(msgs, make_msg("user", "hi"));
+    char *json = build_request(&cfg, msgs, NULL);
+    assert(json);
+    cJSON *req = cJSON_Parse(json); assert(req);
+    cJSON *temp  = cJSON_GetObjectItem(req, "temperature");
+    cJSON *model = cJSON_GetObjectItem(req, "model");
+    cJSON *m     = cJSON_GetObjectItem(req, "messages");
+    int model_keys = 0; cJSON *c = NULL;
+    cJSON_ArrayForEach(c, req) if (c->string && !strcmp(c->string, "model")) model_keys++;
+    if (temp && cJSON_IsNumber(temp) && temp->valuedouble == 0.5 &&
+        model && !strcmp(model->valuestring, "override-model") &&  /* override wins */
+        model_keys == 1 &&                                          /* no duplicate */
+        m && cJSON_GetArraySize(m) == 1)
+        PASS();
+    else FAIL("merge/override mismatch");
+    cJSON_Delete(req); free(json); cJSON_Delete(msgs);
+}
+
+static void test_build_request_extra_empty(void) {
+    TEST("build_request: empty REQUEST_EXTRA leaves body unchanged");
+    Config cfg; memset(&cfg, 0, sizeof(cfg));
+    snprintf(cfg.model, MAX_VALUE, "m");
+    cJSON *msgs = cJSON_CreateArray();
+    char *json = build_request(&cfg, msgs, NULL);
+    cJSON *req = cJSON_Parse(json); assert(req);
+    if (cJSON_GetArraySize(req) == 2 &&        /* exactly model + messages */
+        cJSON_GetObjectItem(req, "model") &&
+        cJSON_GetObjectItem(req, "messages"))
+        PASS();
+    else FAIL("body changed when unset");
+    cJSON_Delete(req); free(json); cJSON_Delete(msgs);
+}
+
+static void test_build_request_extra_garbage(void) {
+    TEST("build_request: malformed REQUEST_EXTRA ignored");
+    Config cfg; memset(&cfg, 0, sizeof(cfg));
+    snprintf(cfg.model, MAX_VALUE, "m");
+    snprintf(cfg.request_extra, MAX_EXTRA, "{not valid json");
+    cJSON *msgs = cJSON_CreateArray();
+    char *json = build_request(&cfg, msgs, NULL);
+    cJSON *req = cJSON_Parse(json);            /* request must still be valid */
+    if (req && cJSON_GetObjectItem(req, "model") && cJSON_GetObjectItem(req, "messages"))
+        PASS();
+    else FAIL("garbage broke the request");
+    if (req) cJSON_Delete(req); free(json); cJSON_Delete(msgs);
+}
+
 /* ======== CONFIG TESTS ======== */
 
 static void test_config_no_key(void) {
@@ -359,6 +413,9 @@ int main(void) {
     test_parse_error_response();
     test_parse_garbage();
     test_build_request();
+    test_build_request_extra_merge();
+    test_build_request_extra_empty();
+    test_build_request_extra_garbage();
     test_full_tool_dispatch();
     test_system_prompt();
     test_skills_loading();

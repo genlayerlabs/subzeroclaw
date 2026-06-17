@@ -6,3 +6,4 @@ model = "minimax/minimax-m2.5"
 # endpoint = "https://openrouter.ai/api/v1/chat/completions"
 # skills_dir = "~/.subzeroclaw/skills"
 # max_turns = 50
+# request_extra = '{"temperature": 0.2}'  # optional JSON object merged into every request body

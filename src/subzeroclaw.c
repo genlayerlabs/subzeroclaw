@@ -13,10 +13,12 @@
 #define MAX_PATH   512
 #define MAX_VALUE  1024
 #define MAX_OUTPUT (128 * 1024)
+#define MAX_EXTRA  8192   /* request_extra: an operator-supplied JSON body override */
 
 typedef struct {
     char api_key[MAX_VALUE], model[MAX_VALUE], endpoint[MAX_VALUE];
     char skills_dir[MAX_PATH], log_dir[MAX_PATH];
+    char request_extra[MAX_EXTRA];
     int  max_turns, max_messages;
 } Config;
 
@@ -26,6 +28,7 @@ static void config_parse_line(Config *cfg, const char *key, const char *val) {
     else if (!strcmp(key, "endpoint"))     snprintf(cfg->endpoint,   MAX_VALUE, "%s", val);
     else if (!strcmp(key, "skills_dir"))   snprintf(cfg->skills_dir, MAX_PATH,  "%s", val);
     else if (!strcmp(key, "log_dir"))      snprintf(cfg->log_dir,    MAX_PATH,  "%s", val);
+    else if (!strcmp(key, "request_extra")) snprintf(cfg->request_extra, MAX_EXTRA, "%s", val);
     else if (!strcmp(key, "max_turns"))    cfg->max_turns    = atoi(val);
     else if (!strcmp(key, "max_messages")) cfg->max_messages = atoi(val);
 }
@@ -64,6 +67,7 @@ int config_load(Config *cfg) {
     if ((v = getenv("SUBZEROCLAW_API_KEY")))  snprintf(cfg->api_key,  MAX_VALUE, "%s", v);
     if ((v = getenv("SUBZEROCLAW_MODEL")))    snprintf(cfg->model,    MAX_VALUE, "%s", v);
     if ((v = getenv("SUBZEROCLAW_ENDPOINT"))) snprintf(cfg->endpoint, MAX_VALUE, "%s", v);
+    if ((v = getenv("SUBZEROCLAW_REQUEST_EXTRA"))) snprintf(cfg->request_extra, MAX_EXTRA, "%s", v);
     if (!cfg->api_key[0]) { fprintf(stderr, "error: no api_key\n"); return -1; }
     return 0;
 }
@@ -202,11 +206,38 @@ static void response_free(Response *r) {
 static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
     cJSON *req = cJSON_CreateObject();
     cJSON_AddStringToObject(req, "model", cfg->model);
-    cJSON_AddItemReferenceToObject(req, "messages", msgs);
-    if (tools) cJSON_AddItemReferenceToObject(req, "tools", tools);
+
+    /* Optional operator-supplied request-body override (SUBZEROCLAW_REQUEST_EXTRA):
+       a JSON object whose top-level keys are merged in. Empty/unset → unchanged;
+       malformed → ignored; on a key collision the override wins. Applied before
+       messages/tools so it can replace `model` and add params (temperature, …)
+       without colliding with the reference items below. */
+    if (cfg->request_extra[0]) {
+        cJSON *extra = cJSON_Parse(cfg->request_extra);
+        if (extra && cJSON_IsObject(extra)) {
+            cJSON *it = NULL;
+            cJSON_ArrayForEach(it, extra) {
+                cJSON *dup = cJSON_Duplicate(it, 1);
+                if (!dup) continue;
+                cJSON_DeleteItemFromObject(req, it->string);  /* override wins */
+                cJSON_AddItemToObject(req, it->string, dup);
+            }
+        }
+        if (extra) cJSON_Delete(extra);
+    }
+
+    /* messages/tools are owned by the runtime and added by reference (not copied);
+       skip if the override already supplied them, so they are never duplicated. */
+    int msgs_ref = 0, tools_ref = 0;
+    if (!cJSON_GetObjectItem(req, "messages")) {
+        cJSON_AddItemReferenceToObject(req, "messages", msgs); msgs_ref = 1;
+    }
+    if (tools && !cJSON_GetObjectItem(req, "tools")) {
+        cJSON_AddItemReferenceToObject(req, "tools", tools); tools_ref = 1;
+    }
     char *json = cJSON_PrintUnformatted(req);
-    cJSON_DetachItemFromObject(req, "messages");
-    if (tools) cJSON_DetachItemFromObject(req, "tools");
+    if (msgs_ref)  cJSON_DetachItemFromObject(req, "messages");
+    if (tools_ref) cJSON_DetachItemFromObject(req, "tools");
     cJSON_Delete(req);
     return json;
 }
