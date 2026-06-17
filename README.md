@@ -121,6 +121,7 @@ Environment variables override the config file:
 SUBZEROCLAW_API_KEY
 SUBZEROCLAW_MODEL
 SUBZEROCLAW_ENDPOINT
+SUBZEROCLAW_REQUEST_EXTRA   # optional: JSON object merged into every request body (e.g. {"temperature":0}); on a key collision the override wins
 ```
 
 ## Usage
