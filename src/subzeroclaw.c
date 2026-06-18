@@ -69,6 +69,27 @@ int config_load(Config *cfg) {
     if ((v = getenv("SUBZEROCLAW_ENDPOINT"))) snprintf(cfg->endpoint, MAX_VALUE, "%s", v);
     if ((v = getenv("SUBZEROCLAW_REQUEST_EXTRA"))) snprintf(cfg->request_extra, MAX_EXTRA, "%s", v);
     if (!cfg->api_key[0]) { fprintf(stderr, "error: no api_key\n"); return -1; }
+
+    /* Scrub the provider config from our own environment now that it lives in cfg.
+       The one tool we expose, "shell", runs commands via popen() (/bin/sh -c),
+       which inherits this process's environment — so without this an LLM-driven
+       command could read the key/endpoint with `echo $SUBZEROCLAW_API_KEY`, `env`,
+       or by catting /proc/<pid>/environ. unsetenv() alone is NOT enough: getenv()
+       returns a pointer into the original environment region that
+       /proc/<pid>/environ exposes, and unsetenv() leaves those bytes intact — so
+       wipe the value in place first, then remove the name. The values remain in
+       cfg, so requests are unaffected. */
+    {
+        static const char *const secret_vars[] = {
+            "SUBZEROCLAW_API_KEY", "SUBZEROCLAW_MODEL",
+            "SUBZEROCLAW_ENDPOINT", "SUBZEROCLAW_REQUEST_EXTRA"
+        };
+        for (size_t i = 0; i < sizeof(secret_vars) / sizeof(secret_vars[0]); i++) {
+            char *p = getenv(secret_vars[i]);
+            if (p) memset(p, 0, strlen(p));
+            unsetenv(secret_vars[i]);
+        }
+    }
     return 0;
 }
 

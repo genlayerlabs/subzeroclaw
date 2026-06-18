@@ -389,6 +389,37 @@ static void test_config_defaults(void) {
     unsetenv("SUBZEROCLAW_API_KEY");
 }
 
+static void test_config_scrubs_env(void) {
+    TEST("config: scrubs provider env after load");
+    char *old_home = getenv("HOME") ? strdup(getenv("HOME")) : NULL;
+    setenv("HOME", "/tmp/szc_no_config", 1); /* skip any real config file */
+    setenv("SUBZEROCLAW_API_KEY", "sk-test-scrub", 1);
+    setenv("SUBZEROCLAW_MODEL", "test/model", 1);
+    setenv("SUBZEROCLAW_ENDPOINT", "https://test.example/v1/chat", 1);
+    setenv("SUBZEROCLAW_REQUEST_EXTRA", "{\"temperature\":0}", 1);
+    Config cfg;
+    int rc = config_load(&cfg);
+    if (old_home) { setenv("HOME", old_home, 1); free(old_home); }
+    else unsetenv("HOME");
+
+    /* values survive in cfg, so requests are unaffected... */
+    int cfg_ok = rc == 0 &&
+        strcmp(cfg.api_key, "sk-test-scrub") == 0 &&
+        strcmp(cfg.model, "test/model") == 0 &&
+        strcmp(cfg.endpoint, "https://test.example/v1/chat") == 0 &&
+        strcmp(cfg.request_extra, "{\"temperature\":0}") == 0;
+    /* ...but are gone from the environment the shell tool inherits */
+    int env_scrubbed =
+        getenv("SUBZEROCLAW_API_KEY") == NULL &&
+        getenv("SUBZEROCLAW_MODEL") == NULL &&
+        getenv("SUBZEROCLAW_ENDPOINT") == NULL &&
+        getenv("SUBZEROCLAW_REQUEST_EXTRA") == NULL;
+
+    if (cfg_ok && env_scrubbed) PASS();
+    else if (!cfg_ok) FAIL("cfg lost a provider value");
+    else FAIL("env not scrubbed after load");
+}
+
 /* ======== MAIN ======== */
 
 int main(void) {
@@ -421,6 +452,7 @@ int main(void) {
     test_skills_loading();
     test_config_no_key();
     test_config_defaults();
+    test_config_scrubs_env();
 
     printf("\n  ═══════════════════════════════════════════\n");
     printf("  %d passed, %d failed\n\n", tests_passed, tests_failed);

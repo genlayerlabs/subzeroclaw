@@ -20,14 +20,12 @@ $(TARGET): src/subzeroclaw.c $(VENDOR)
 test: src/test.c src/subzeroclaw.c $(VENDOR)
 	$(CC) $(CFLAGS) -o test_subzeroclaw src/test.c $(VENDOR) $(LDFLAGS)
 	./test_subzeroclaw
-watchdog: src/watchdog.c
-	$(CC) $(CFLAGS) -o watchdog src/watchdog.c
 
 clean:
-	rm -f $(TARGET) test_subzeroclaw watchdog
+	rm -f $(TARGET) test_subzeroclaw
 
 install: $(TARGET)
 	mkdir -p $(HOME)/.local/bin
 	cp $(TARGET) $(HOME)/.local/bin/
 
-.PHONY: clean install test watchdog
+.PHONY: clean install test
