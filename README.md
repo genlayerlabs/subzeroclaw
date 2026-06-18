@@ -89,8 +89,7 @@ The skills included in this repo (`skills/`) are just examples to show the forma
 
 ```bash
 make            # builds subzeroclaw (54KB)
-make watchdog   # builds watchdog (17KB)
-make test       # runs 16 tests
+make test       # runs the test suite
 make install    # copies to ~/.local/bin/
 ```
 
@@ -132,10 +131,32 @@ SUBZEROCLAW_REQUEST_EXTRA   # optional: JSON object merged into every request bo
 
 # Interactive
 ./subzeroclaw
-
-# Daemon with watchdog (restarts on crash, exponential backoff)
-./watchdog ./subzeroclaw "run the backup skill"
 ```
+
+## Running as a service
+
+SubZeroClaw is just the loop — it does not supervise itself. Restart-on-crash,
+backoff, and logging belong to your init system, which already does them better
+than a bundled supervisor could. Bring your own. A minimal systemd unit:
+
+```ini
+[Service]
+ExecStart=/usr/local/bin/subzeroclaw "run the backup skill"
+Restart=on-failure
+RestartSec=5
+User=subzero
+EnvironmentFile=/etc/subzeroclaw.env   # root-owned, chmod 600: SUBZEROCLAW_API_KEY=...
+```
+
+This also gets you credential isolation for free, and it is the recommended way
+to hold the key: run the agent as an unprivileged `User=`, and deliver the key
+through the environment from a root-owned `EnvironmentFile` the agent's user
+cannot read. SubZeroClaw scrubs `SUBZEROCLAW_*` from its own environment right
+after reading config (see `config_load`), so the shell it hands the model never
+inherits the key — `echo $SUBZEROCLAW_API_KEY` and `cat /proc/self/environ` come
+up empty. The supervisor owns the secret; the agent only ever holds a copy in
+memory. (None of this constrains what the shell can *do* — that is still
+unguarded by design; it only keeps the runtime's own credential out of it.)
 
 ## Session logging
 
@@ -185,8 +206,7 @@ No vector DB. No embeddings. One API call to compress context.
 ```
 src/
 ├── subzeroclaw.c   ~380 lines  The entire runtime
-├── test.c                      16 tests
-├── watchdog.c       50 lines   Crash recovery + backoff
+├── test.c                      the test suite
 ├── cJSON.c                     Vendored JSON parser
 └── cJSON.h
 ```
