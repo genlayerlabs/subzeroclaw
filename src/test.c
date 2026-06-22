@@ -430,6 +430,21 @@ static void test_retention_does_not_start_with_tool(void) {
     cJSON_Delete(msgs);
 }
 
+static void test_compact_skips_without_removable_prefix(void) {
+    TEST("compact: skips without removable prefix");
+    Config cfg; memset(&cfg, 0, sizeof(cfg));
+    snprintf(cfg.model, MAX_VALUE, "m");
+    cfg.max_context_tokens = 40;
+    char big[512]; memset(big, 'x', sizeof(big) - 1); big[sizeof(big) - 1] = '\0';
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON_AddItemToArray(msgs, make_msg("system", "sys"));
+    cJSON_AddItemToArray(msgs, make_msg("user", big));
+    int rc = compact_messages(&cfg, msgs, NULL, NULL);
+    if (rc == 0 && cJSON_GetArraySize(msgs) == 2) PASS();
+    else FAIL("summary inserted without deleting old context");
+    cJSON_Delete(msgs);
+}
+
 /* ======== CONFIG TESTS ======== */
 
 static void test_config_no_key(void) {
@@ -547,6 +562,7 @@ int main(void) {
     test_retention_keeps_small_recent_messages();
     test_retention_keeps_large_latest_whole();
     test_retention_does_not_start_with_tool();
+    test_compact_skips_without_removable_prefix();
     test_full_tool_dispatch();
     test_system_prompt();
     test_skills_loading();

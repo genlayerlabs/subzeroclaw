@@ -366,6 +366,8 @@ static int compact_messages(const Config *cfg, cJSON *msgs, cJSON *tools, FILE *
     if (cfg->max_context_tokens <= 0) return 0;
     int tokens = estimate_request_tokens(cfg, msgs, tools);
     if (tokens <= cfg->max_context_tokens) return 0;
+    int start = retention_start_index(cfg, msgs);
+    if (start <= 1) return 0;
     fprintf(stderr, "[compact] ~%d tokens, summarizing\n", tokens);
     log_write(log, "SYS", "compacting context");
 
@@ -373,9 +375,9 @@ static int compact_messages(const Config *cfg, cJSON *msgs, cJSON *tools, FILE *
     size_t cap = 512000, len = 0;
     char *convo = malloc(cap);
     convo[0] = '\0';
-    cJSON *m = NULL;
-    cJSON_ArrayForEach(m, msgs) {
+    for (int i = 1; i < start; i++) {
         if (len + 256 >= cap) break;
+        cJSON *m = cJSON_GetArrayItem(msgs, i);
         cJSON *role = cJSON_GetObjectItem(m, "role");
         cJSON *ct = cJSON_GetObjectItem(m, "content");
         if (!role || !cJSON_IsString(role) || !ct || !cJSON_IsString(ct)) continue;
@@ -405,8 +407,6 @@ static int compact_messages(const Config *cfg, cJSON *msgs, cJSON *tools, FILE *
     if (parse_response(rb, &resp) != 0 || !resp.text) { free(rb); response_free(&resp); return -1; }
     char *summary = strdup(resp.text); free(rb); response_free(&resp);
     log_write(log, "COMPACT", summary);
-
-    int start = retention_start_index(cfg, msgs);
 
     for (int i = start - 1; i >= 1; i--)
         cJSON_DeleteItemFromArray(msgs, i);
@@ -454,7 +454,7 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
     log_write(log, "USER", input);
 
     for (int turn = 1; turn <= cfg->max_turns; turn++) {
-        compact_messages(cfg, msgs, tools, log);
+        if (compact_messages(cfg, msgs, tools, log) < 0) return -1;
         fprintf(stderr, "[%d] %s...\n", turn, cfg->model);
         char *rb = llm_chat(cfg, msgs, tools);
         if (!rb) return -1;
