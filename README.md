@@ -172,13 +172,15 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 
 ## Context compaction
 
-When the message history exceeds `max_messages` (default 40), the agent:
+When the estimated outbound request exceeds `max_context_tokens` (default 24000), the agent:
 
 1. Sends old messages to the LLM for summarization
 2. Replaces them with the summary
-3. Keeps the last N raw messages intact
+3. Keeps recent raw messages intact, without splitting a message or orphaning tool output
 
-No vector DB. No embeddings. One API call to compress context.
+The token count is a local estimate from the serialized request, so compaction
+happens before the model call. No vector DB. No embeddings. One API call to
+compress context.
 
 ## Config reference
 
@@ -190,7 +192,7 @@ No vector DB. No embeddings. One API call to compress context.
 | `skills_dir` | `~/.subzeroclaw/skills` | Path to skill markdown files |
 | `log_dir` | `~/.subzeroclaw/logs` | Session log directory |
 | `max_turns` | 200 | Max tool-call loops per input |
-| `max_messages` | 40 | Trigger context compaction |
+| `max_context_tokens` | 24000 | Estimated request-token budget before compaction |
 
 ## Troubleshooting
 

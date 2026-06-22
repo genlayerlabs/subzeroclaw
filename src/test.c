@@ -357,6 +357,79 @@ static void test_build_request_extra_garbage(void) {
     if (req) cJSON_Delete(req); free(json); cJSON_Delete(msgs);
 }
 
+/* ======== CONTEXT TOKEN ESTIMATE TESTS ======== */
+
+static void test_estimate_tokens_rounds_up(void) {
+    TEST("estimate_tokens: rounds up");
+    if (estimate_tokens("") == 0 &&
+        estimate_tokens("a") == 1 &&
+        estimate_tokens("abcd") == 1 &&
+        estimate_tokens("abcde") == 2)
+        PASS();
+    else FAIL("bad estimate");
+}
+
+static void test_estimate_request_tokens_includes_tools(void) {
+    TEST("estimate_request_tokens: includes tools");
+    Config cfg; memset(&cfg, 0, sizeof(cfg));
+    snprintf(cfg.model, MAX_VALUE, "m");
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON_AddItemToArray(msgs, make_msg("user", "hi"));
+    cJSON *tools = cJSON_Parse(TOOLS_JSON);
+    int without = estimate_request_tokens(&cfg, msgs, NULL);
+    int with = estimate_request_tokens(&cfg, msgs, tools);
+    if (with > without) PASS();
+    else FAIL("tools missing from estimate");
+    cJSON_Delete(msgs); cJSON_Delete(tools);
+}
+
+static void test_retention_keeps_small_recent_messages(void) {
+    TEST("retention: keeps small recent messages");
+    Config cfg; memset(&cfg, 0, sizeof(cfg));
+    cfg.max_context_tokens = 1000;
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON_AddItemToArray(msgs, make_msg("system", "sys"));
+    for (int i = 0; i < 5; i++)
+        cJSON_AddItemToArray(msgs, make_msg("user", "short"));
+    if (retention_start_index(&cfg, msgs) == 1) PASS();
+    else FAIL("small messages dropped");
+    cJSON_Delete(msgs);
+}
+
+static void test_retention_keeps_large_latest_whole(void) {
+    TEST("retention: keeps large latest whole");
+    Config cfg; memset(&cfg, 0, sizeof(cfg));
+    cfg.max_context_tokens = 40;
+    char big[256]; memset(big, 'x', sizeof(big) - 1); big[sizeof(big) - 1] = '\0';
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON_AddItemToArray(msgs, make_msg("system", "sys"));
+    cJSON_AddItemToArray(msgs, make_msg("user", "old"));
+    cJSON_AddItemToArray(msgs, make_msg("assistant", big));
+    if (retention_start_index(&cfg, msgs) == 2) PASS();
+    else FAIL("latest message split or dropped");
+    cJSON_Delete(msgs);
+}
+
+static void test_retention_does_not_start_with_tool(void) {
+    TEST("retention: does not start with tool");
+    Config cfg; memset(&cfg, 0, sizeof(cfg));
+    cfg.max_context_tokens = 24;
+    char old[160]; memset(old, 'o', sizeof(old) - 1); old[sizeof(old) - 1] = '\0';
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON_AddItemToArray(msgs, make_msg("system", "sys"));
+    cJSON_AddItemToArray(msgs, make_msg("user", old));
+    cJSON_AddItemToArray(msgs, make_msg("assistant", "tool call"));
+    cJSON *tool = cJSON_CreateObject();
+    cJSON_AddStringToObject(tool, "role", "tool");
+    cJSON_AddStringToObject(tool, "tool_call_id", "call_test");
+    cJSON_AddStringToObject(tool, "content", "result");
+    cJSON_AddItemToArray(msgs, tool);
+    int start = retention_start_index(&cfg, msgs);
+    if (start == 2 && !msg_is_role(cJSON_GetArrayItem(msgs, start), "tool")) PASS();
+    else FAIL("retained suffix starts with tool");
+    cJSON_Delete(msgs);
+}
+
 /* ======== CONFIG TESTS ======== */
 
 static void test_config_no_key(void) {
@@ -377,16 +450,38 @@ static void test_config_no_key(void) {
 
 static void test_config_defaults(void) {
     TEST("config: loads with env var");
+    char *old_home = getenv("HOME") ? strdup(getenv("HOME")) : NULL;
+    setenv("HOME", "/tmp/szc_no_config", 1);
     setenv("SUBZEROCLAW_API_KEY", "sk-test-fake-key", 1);
     Config cfg;
     int rc = config_load(&cfg);
+    if (old_home) { setenv("HOME", old_home, 1); free(old_home); }
+    else unsetenv("HOME");
     if (rc == 0 &&
         strcmp(cfg.api_key, "sk-test-fake-key") == 0 &&
-        strstr(cfg.endpoint, "openrouter.ai"))
+        strstr(cfg.endpoint, "openrouter.ai") &&
+        cfg.max_context_tokens == 24000)
         PASS();
     else
         FAIL("config mismatch");
     unsetenv("SUBZEROCLAW_API_KEY");
+}
+
+static void test_config_max_context_tokens_file(void) {
+    TEST("config: max_context_tokens from file");
+    system("rm -rf /tmp/szc_ctx_config && mkdir -p /tmp/szc_ctx_config/.subzeroclaw");
+    FILE *f = fopen("/tmp/szc_ctx_config/.subzeroclaw/config", "w");
+    fprintf(f, "api_key = \"sk-test-file\"\nmax_context_tokens = 12345\n");
+    fclose(f);
+    char *old_home = getenv("HOME") ? strdup(getenv("HOME")) : NULL;
+    setenv("HOME", "/tmp/szc_ctx_config", 1);
+    Config cfg;
+    int rc = config_load(&cfg);
+    if (old_home) { setenv("HOME", old_home, 1); free(old_home); }
+    else unsetenv("HOME");
+    system("rm -rf /tmp/szc_ctx_config");
+    if (rc == 0 && cfg.max_context_tokens == 12345) PASS();
+    else FAIL("max_context_tokens not loaded");
 }
 
 static void test_config_scrubs_env(void) {
@@ -447,11 +542,17 @@ int main(void) {
     test_build_request_extra_merge();
     test_build_request_extra_empty();
     test_build_request_extra_garbage();
+    test_estimate_tokens_rounds_up();
+    test_estimate_request_tokens_includes_tools();
+    test_retention_keeps_small_recent_messages();
+    test_retention_keeps_large_latest_whole();
+    test_retention_does_not_start_with_tool();
     test_full_tool_dispatch();
     test_system_prompt();
     test_skills_loading();
     test_config_no_key();
     test_config_defaults();
+    test_config_max_context_tokens_file();
     test_config_scrubs_env();
 
     printf("\n  ═══════════════════════════════════════════\n");

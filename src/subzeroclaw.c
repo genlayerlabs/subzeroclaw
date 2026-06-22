@@ -19,7 +19,7 @@ typedef struct {
     char api_key[MAX_VALUE], model[MAX_VALUE], endpoint[MAX_VALUE];
     char skills_dir[MAX_PATH], log_dir[MAX_PATH];
     char request_extra[MAX_EXTRA];
-    int  max_turns, max_messages;
+    int  max_turns, max_context_tokens;
 } Config;
 
 static void config_parse_line(Config *cfg, const char *key, const char *val) {
@@ -30,7 +30,7 @@ static void config_parse_line(Config *cfg, const char *key, const char *val) {
     else if (!strcmp(key, "log_dir"))      snprintf(cfg->log_dir,    MAX_PATH,  "%s", val);
     else if (!strcmp(key, "request_extra")) snprintf(cfg->request_extra, MAX_EXTRA, "%s", val);
     else if (!strcmp(key, "max_turns"))    cfg->max_turns    = atoi(val);
-    else if (!strcmp(key, "max_messages")) cfg->max_messages = atoi(val);
+    else if (!strcmp(key, "max_context_tokens")) cfg->max_context_tokens = atoi(val);
 }
 
 int config_load(Config *cfg) {
@@ -41,7 +41,7 @@ int config_load(Config *cfg) {
     snprintf(cfg->model,      MAX_VALUE, "minimax/minimax-m2.5");
     snprintf(cfg->skills_dir, MAX_PATH,  "%s/.subzeroclaw/skills", home);
     snprintf(cfg->log_dir,    MAX_PATH,  "%s/.subzeroclaw/logs", home);
-    cfg->max_turns = 200; cfg->max_messages = 40;
+    cfg->max_turns = 200; cfg->max_context_tokens = 24000;
 
     char path[MAX_PATH];
     snprintf(path, MAX_PATH, "%s/.subzeroclaw/config", home);
@@ -271,6 +271,27 @@ static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
     return json;
 }
 
+static int estimate_tokens(const char *s) {
+    size_t len = s ? strlen(s) : 0;
+    return len ? (int)((len + 3) / 4) : 0;
+}
+
+static int estimate_json_tokens(cJSON *item) {
+    char *json = cJSON_PrintUnformatted(item);
+    if (!json) return 0;
+    int tokens = estimate_tokens(json);
+    free(json);
+    return tokens;
+}
+
+static int estimate_request_tokens(const Config *cfg, cJSON *msgs, cJSON *tools) {
+    char *json = build_request(cfg, msgs, tools);
+    if (!json) return 0;
+    int tokens = estimate_tokens(json);
+    free(json);
+    return tokens;
+}
+
 #if defined(__GNUC__) || defined(__clang__)
 #define SZC_WEAK __attribute__((weak))
 #else
@@ -317,10 +338,35 @@ static cJSON *make_msg(const char *role, const char *content) {
     return m;
 }
 
-static int compact_messages(const Config *cfg, cJSON *msgs, FILE *log) {
+static int msg_is_role(cJSON *msg, const char *want) {
+    cJSON *role = cJSON_GetObjectItem(msg, "role");
+    return role && cJSON_IsString(role) && !strcmp(role->valuestring, want);
+}
+
+static int retention_start_index(const Config *cfg, cJSON *msgs) {
     int total = cJSON_GetArraySize(msgs);
-    if (total <= cfg->max_messages) return 0;
-    fprintf(stderr, "[compact] %d msgs, summarizing\n", total);
+    int budget = cfg->max_context_tokens > 1 ? cfg->max_context_tokens / 2 : 1;
+    int used = 0, start = total;
+
+    for (int i = total - 1; i >= 1; i--) {
+        int tokens = estimate_json_tokens(cJSON_GetArrayItem(msgs, i));
+        if (start < total && used + tokens > budget) break;
+        used += tokens;
+        start = i;
+        if (used > budget) break; /* keep the newest message whole */
+    }
+
+    if (start < 1) start = 1;
+    while (start > 1 && msg_is_role(cJSON_GetArrayItem(msgs, start), "tool"))
+        start--;
+    return start;
+}
+
+static int compact_messages(const Config *cfg, cJSON *msgs, cJSON *tools, FILE *log) {
+    if (cfg->max_context_tokens <= 0) return 0;
+    int tokens = estimate_request_tokens(cfg, msgs, tools);
+    if (tokens <= cfg->max_context_tokens) return 0;
+    fprintf(stderr, "[compact] ~%d tokens, summarizing\n", tokens);
     log_write(log, "SYS", "compacting context");
 
     /* build text digest — keep user/assistant in full, trim only tool outputs */
@@ -360,15 +406,7 @@ static int compact_messages(const Config *cfg, cJSON *msgs, FILE *log) {
     char *summary = strdup(resp.text); free(rb); response_free(&resp);
     log_write(log, "COMPACT", summary);
 
-    /* keep last ~10 msgs, but skip orphaned tool msgs at the boundary
-       (their tool_call_ids reference deleted assistant msgs → API rejects) */
-    int start = total - 10;
-    if (start < 1) start = 1;
-    while (start < total - 1) {
-        cJSON *r = cJSON_GetObjectItem(cJSON_GetArrayItem(msgs, start), "role");
-        if (!r || strcmp(r->valuestring, "tool") != 0) break;
-        start++;
-    }
+    int start = retention_start_index(cfg, msgs);
 
     for (int i = start - 1; i >= 1; i--)
         cJSON_DeleteItemFromArray(msgs, i);
@@ -416,7 +454,7 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
     log_write(log, "USER", input);
 
     for (int turn = 1; turn <= cfg->max_turns; turn++) {
-        compact_messages(cfg, msgs, log);
+        compact_messages(cfg, msgs, tools, log);
         fprintf(stderr, "[%d] %s...\n", turn, cfg->model);
         char *rb = llm_chat(cfg, msgs, tools);
         if (!rb) return -1;
