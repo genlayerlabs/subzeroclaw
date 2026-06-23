@@ -20,11 +20,11 @@ You write a skill as a markdown file. You point SubZeroClaw at it. It calls an L
 
 ```
 ~/.subzeroclaw/skills/monitor.md    ← what the agent knows
-~/.subzeroclaw/config               ← API key + model
+~/.subzeroclaw/config               ← API key + request_extra (model / routing policy)
 ~/.subzeroclaw/logs/<session>.txt   ← full I/O trace
 ```
 
-The agent reads the skill into its system prompt, receives input, and autonomously calls tools until the task is complete. When context gets full, it compacts old messages into a summary and keeps going.
+The agent reads the skill into its system prompt, receives input, and autonomously calls tools until the task is complete. When context grows, the router signals it and the agent seals the old turns **asynchronously** (append-only, in the background) — it never pauses to compact (see "Routing & compaction via unhardcoded").
 
 ## Quickstart
 
@@ -36,13 +36,47 @@ make                          # builds the 54KB binary in ~0.5s
 mkdir -p ~/.subzeroclaw/skills
 cat > ~/.subzeroclaw/config << 'EOF'
 api_key = "sk-or-your-openrouter-key"
-model = "minimax/minimax-m2.5"
+# The model is no longer a dedicated key — it rides in request_extra (the generic
+# body-override channel). Direct provider: set the model. Against an unhardcoded
+# router: send a policy instead — see "Routing & compaction via unhardcoded".
+request_extra = "{\"model\": \"minimax/minimax-m2.5\"}"
 EOF
 
 ./subzeroclaw "check disk usage and clean tmp if over 80%"
 ```
 
 Clone, build, drop in an [OpenRouter](https://openrouter.ai) key, run. No daemon to register, no service to start. You need `gcc` to build and `curl` at runtime — everything else is in the box.
+
+## Routing & compaction via unhardcoded
+
+Two things a long agent loop needs — **routing with prompt-cache affinity** and
+**context compaction** — were never part of "skill + LLM + shell + loop". They
+belong to the substrate, not the agent. So rather than grow that logic in C,
+SubZeroClaw points its `endpoint` at [**unhardcoded**](https://github.com/genlayerlabs/unhardcoded)
+(MIT, open source) and expresses the behaviour as JSON instead of code:
+
+- **The loop** — `request_extra` carries a routing policy and the model. The
+  router picks the (provider, model) per call and keeps the conversation pinned
+  to the peer that already holds its prompt-cache prefix (SubZeroClaw sends a
+  per-run `session` id for that affinity), e.g.
+  `{"model":"policy:auto","policy_ir":[ "policy", … cache_hot affinity … ]}`.
+- **Compaction** — when the router signals context pressure (an `x_router.compact`
+  flag on the response), SubZeroClaw fires an append-only seal at the router's
+  `/v1/compact` **in the background** and keeps taking turns; when the sealed block
+  lands it splices it in *ahead* of the turns that arrived meanwhile. Compaction is
+  asynchronous — no turn is ever blocked, the prompt-cache prefix is never
+  rewritten, and you never see a pause. The seal routing + how many recent turns to
+  keep verbatim ride in `SUBZEROCLAW_COMPACT_EXTRA` (the second JSON), e.g.
+  `{"keep_recent":8,"policy_ir":[ "policy", … cheap summariser … ]}`.
+
+This is SubZeroClaw being *more* itself: the loop, the shell, the skill — on a
+substrate that carries everything that was never "skill + LLM + shell + loop".
+unhardcoded (MIT) is part of that substrate, on the same footing as the Linux
+shell it `popen`s: just as there is no agent without a terminal, there is no
+routing, cache, or compaction without the router. The runtime is designed to run
+on unhardcoded — point `endpoint` at a bare provider and the HTTP call still
+fires, but it is a degraded loop (no routing, no cache, no compaction — context
+grows until the provider refuses it), not a supported standalone mode.
 
 ## Why not just use ZeroClaw / OpenClaw?
 
@@ -102,7 +136,10 @@ mkdir -p ~/.subzeroclaw/skills
 
 cat > ~/.subzeroclaw/config << EOF
 api_key = "sk-or-your-openrouter-key"
-model = "minimax/minimax-m2.5"
+# The model is no longer a dedicated key — it rides in request_extra (the generic
+# body-override channel). Direct provider: set the model. Against an unhardcoded
+# router: send a policy instead — see "Routing & compaction via unhardcoded".
+request_extra = "{\"model\": \"minimax/minimax-m2.5\"}"
 EOF
 ```
 
@@ -118,9 +155,14 @@ Environment variables override the config file:
 
 ```
 SUBZEROCLAW_API_KEY
-SUBZEROCLAW_MODEL
 SUBZEROCLAW_ENDPOINT
-SUBZEROCLAW_REQUEST_EXTRA   # optional: JSON object merged into every request body (e.g. {"temperature":0}); on a key collision the override wins
+SUBZEROCLAW_REQUEST_EXTRA   # the LOOP JSON, merged into every request body. Carries the
+                           #   model ({"model":"..."}); against an unhardcoded router it carries
+                           #   the routing policy too ({"model":"policy:auto","policy_ir":[...]}).
+                           #   On a key collision the override wins.
+SUBZEROCLAW_COMPACT_EXTRA  # the COMPACTION JSON. When set, an x_router.compact signal triggers
+                           #   an async append-only seal at the router's /v1/compact; this carries
+                           #   keep_recent + the cheap summariser policy_ir. Unset -> no compaction.
 ```
 
 ## Usage
@@ -170,27 +212,17 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 [2026-02-16 16:30:04] ASST: Disk usage is at 72%, below threshold.
 ```
 
-## Context compaction
-
-When the message history exceeds `max_messages` (default 40), the agent:
-
-1. Sends old messages to the LLM for summarization
-2. Replaces them with the summary
-3. Keeps the last N raw messages intact
-
-No vector DB. No embeddings. One API call to compress context.
-
 ## Config reference
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `api_key` | (required) | OpenRouter API key |
-| `model` | `minimax/minimax-m2.5` | Any OpenAI-compatible model |
-| `endpoint` | `https://openrouter.ai/api/v1/chat/completions` | API endpoint |
+| `api_key` | (required) | OpenRouter (or unhardcoded) API key |
+| `request_extra` | (none) | the loop JSON merged into every request body — carries the `model`, and against an unhardcoded router the routing `policy_ir` |
+| `compact_extra` | (none) | the compaction JSON — `keep_recent` + the cheap summariser `policy_ir`; unset disables compaction |
+| `endpoint` | `https://openrouter.ai/api/v1/chat/completions` | API endpoint (point it at an unhardcoded router for routing/cache/compaction) |
 | `skills_dir` | `~/.subzeroclaw/skills` | Path to skill markdown files |
 | `log_dir` | `~/.subzeroclaw/logs` | Session log directory |
 | `max_turns` | 200 | Max tool-call loops per input |
-| `max_messages` | 40 | Trigger context compaction |
 
 ## Troubleshooting
 
@@ -198,7 +230,7 @@ No vector DB. No embeddings. One API call to compress context.
 |---------|-----|
 | `curl: command not found` or no response from the model | The runtime shells out to `curl` for API calls. Install it: `sudo apt install curl`. |
 | `401 Unauthorized` from the endpoint | Missing or invalid key. Check `api_key` in `~/.subzeroclaw/config` or the `SUBZEROCLAW_API_KEY` env var. |
-| Model never calls tools / loops without progress | Use a `model` that supports tool calling — not every OpenRouter model does. |
+| Model never calls tools / loops without progress | Use a model that supports tool calling (set it in `request_extra`) — not every model does. |
 | `make` fails on a fresh Pi | Install a compiler: `sudo apt install build-essential`. The vendored cJSON is used automatically when `libcjson-dev` is absent. |
 
 ## Source
