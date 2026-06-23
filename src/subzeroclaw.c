@@ -174,8 +174,16 @@ char *tool_execute(const char *name, const char *args_json) {
     /* Reserve 16 bytes at the head for the "[exit:N] " prefix */
     char *out = malloc(MAX_OUTPUT + 16);
     size_t total = 16, n;
-    while ((n = fread(out + total, 1, MAX_OUTPUT - 1, fp)) > 0) {
-        total += n; if (total >= MAX_OUTPUT + 15) break;
+    /* Bound each read by the space left in `out` (cap = MAX_OUTPUT+16, with
+       out[total] reserved for the trailing NUL). The previous loop kept the
+       per-read count at MAX_OUTPUT-1 even as `total` grew, so the SECOND fread
+       on any tool output under ~128KB ran past the buffer. On a fortified (-O2,
+       Ubuntu-default _FORTIFY_SOURCE) glibc build that is a fatal __fread_chk
+       abort (SIGABRT) — it silently killed the agent the moment it read back a
+       small tool result (e.g. a `swarm-msg ask` envelope), wedging the turn. */
+    while (total < MAX_OUTPUT + 15 &&
+           (n = fread(out + total, 1, (MAX_OUTPUT + 15) - total, fp)) > 0) {
+        total += n;
     }
     out[total] = '\0';
     int status = pclose(fp);
