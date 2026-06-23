@@ -69,10 +69,14 @@ SubZeroClaw points its `endpoint` at [**unhardcoded**](https://github.com/genlay
   keep verbatim ride in `SUBZEROCLAW_COMPACT_EXTRA` (the second JSON), e.g.
   `{"keep_recent":8,"policy_ir":[ "policy", … cheap summariser … ]}`.
 
-This is SubZeroClaw being *more* itself: the loop, the shell, the skill — plus a
-single MIT dependency for the substrate concerns. Point `endpoint` at a plain
-provider instead (with a `model` in `request_extra`) and it runs standalone — no
-routing, no cache, no compaction — exactly as before.
+This is SubZeroClaw being *more* itself: the loop, the shell, the skill — on a
+substrate that carries everything that was never "skill + LLM + shell + loop".
+unhardcoded (MIT) is part of that substrate, on the same footing as the Linux
+shell it `popen`s: just as there is no agent without a terminal, there is no
+routing, cache, or compaction without the router. The runtime is designed to run
+on unhardcoded — point `endpoint` at a bare provider and the HTTP call still
+fires, but it is a degraded loop (no routing, no cache, no compaction — context
+grows until the provider refuses it), not a supported standalone mode.
 
 ## Why not just use ZeroClaw / OpenClaw?
 
