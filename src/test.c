@@ -416,6 +416,49 @@ static void test_config_scrubs_env(void) {
 
 /* ======== MAIN ======== */
 
+static void test_parse_compact_flag(void) {
+    TEST("parse_response: reads x_router.compact");
+    Response r1, r2;
+    int ok1 = parse_response(
+        "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"hi\"}}],"
+        "\"x_router\":{\"compact\":true}}", &r1) == 0;
+    int ok2 = parse_response(
+        "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"hi\"}}]}",
+        &r2) == 0;
+    if (ok1 && ok2 && r1.compact == 1 && r2.compact == 0) PASS();
+    else FAIL("compact flag mismatch");
+    if (ok1) response_free(&r1);
+    if (ok2) response_free(&r2);
+}
+
+static void test_compact_splice(void) {
+    TEST("compact_splice: append-only seal keeps post-snapshot turns");
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON_AddItemToArray(msgs, make_msg("system", "sys"));     /* 0 */
+    cJSON_AddItemToArray(msgs, make_msg("user", "u0"));        /* 1 */
+    cJSON_AddItemToArray(msgs, make_msg("assistant", "a0"));   /* 2 */
+    cJSON_AddItemToArray(msgs, make_msg("user", "u1"));        /* 3 */
+    cJSON_AddItemToArray(msgs, make_msg("assistant", "a1"));   /* 4  -> snapshot_len = 5 */
+    cJSON_AddItemToArray(msgs, make_msg("user", "u2"));        /* 5  arrived while sealing */
+    cJSON_AddItemToArray(msgs, make_msg("assistant", "a2"));   /* 6  */
+    char path[64];
+    write_temp("testcres",
+        "{\"messages\":[{\"role\":\"system\",\"content\":\"sys\"},"
+        "{\"role\":\"system\",\"content\":\"SEALED\"}],\"compacted\":true}",
+        path, sizeof(path));
+    compact_splice(msgs, 5, path, NULL);   /* consumes + unlinks path */
+    int n = cJSON_GetArraySize(msgs);
+    cJSON *m1 = cJSON_GetArrayItem(msgs, 1), *last = cJSON_GetArrayItem(msgs, n - 1);
+    cJSON *c1 = m1 ? cJSON_GetObjectItem(m1, "content") : NULL;
+    cJSON *cl = last ? cJSON_GetObjectItem(last, "content") : NULL;
+    if (n == 4 &&                                       /* sys + SEALED + u2 + a2 */
+        c1 && !strcmp(c1->valuestring, "SEALED") &&
+        cl && !strcmp(cl->valuestring, "a2"))           /* post-snapshot turns kept */
+        PASS();
+    else FAIL("splice result wrong");
+    cJSON_Delete(msgs);
+}
+
 int main(void) {
     printf("\n  SubZeroClaw test suite\n");
     printf("  ═══════════════════════════════════════════\n\n");
@@ -441,6 +484,8 @@ int main(void) {
     test_build_request_extra_merge();
     test_build_request_extra_empty();
     test_build_request_extra_garbage();
+    test_parse_compact_flag();
+    test_compact_splice();
     test_full_tool_dispatch();
     test_system_prompt();
     test_skills_loading();

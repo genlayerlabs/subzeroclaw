@@ -18,10 +18,11 @@
 typedef struct {
     char api_key[MAX_VALUE], endpoint[MAX_VALUE];
     char skills_dir[MAX_PATH], log_dir[MAX_PATH];
-    char request_extra[MAX_EXTRA];
+    char request_extra[MAX_EXTRA];   /* the loop JSON: model + routing policy_ir */
+    char compact_extra[MAX_EXTRA];   /* the compaction JSON: keep_recent + seal policy_ir */
     char session[MAX_VALUE];   /* runtime per-run id (sid); sent so the router can
                                   keep this conversation pinned to its cache-hot peer */
-    int  max_turns, max_messages;
+    int  max_turns;
 } Config;
 
 static void config_parse_line(Config *cfg, const char *key, const char *val) {
@@ -30,8 +31,8 @@ static void config_parse_line(Config *cfg, const char *key, const char *val) {
     else if (!strcmp(key, "skills_dir"))   snprintf(cfg->skills_dir, MAX_PATH,  "%s", val);
     else if (!strcmp(key, "log_dir"))      snprintf(cfg->log_dir,    MAX_PATH,  "%s", val);
     else if (!strcmp(key, "request_extra")) snprintf(cfg->request_extra, MAX_EXTRA, "%s", val);
+    else if (!strcmp(key, "compact_extra")) snprintf(cfg->compact_extra, MAX_EXTRA, "%s", val);
     else if (!strcmp(key, "max_turns"))    cfg->max_turns    = atoi(val);
-    else if (!strcmp(key, "max_messages")) cfg->max_messages = atoi(val);
 }
 
 int config_load(Config *cfg) {
@@ -41,7 +42,7 @@ int config_load(Config *cfg) {
     snprintf(cfg->endpoint,   MAX_VALUE, "https://openrouter.ai/api/v1/chat/completions");
     snprintf(cfg->skills_dir, MAX_PATH,  "%s/.subzeroclaw/skills", home);
     snprintf(cfg->log_dir,    MAX_PATH,  "%s/.subzeroclaw/logs", home);
-    cfg->max_turns = 200; cfg->max_messages = 40;
+    cfg->max_turns = 200;
 
     char path[MAX_PATH];
     snprintf(path, MAX_PATH, "%s/.subzeroclaw/config", home);
@@ -67,6 +68,7 @@ int config_load(Config *cfg) {
     if ((v = getenv("SUBZEROCLAW_API_KEY")))  snprintf(cfg->api_key,  MAX_VALUE, "%s", v);
     if ((v = getenv("SUBZEROCLAW_ENDPOINT"))) snprintf(cfg->endpoint, MAX_VALUE, "%s", v);
     if ((v = getenv("SUBZEROCLAW_REQUEST_EXTRA"))) snprintf(cfg->request_extra, MAX_EXTRA, "%s", v);
+    if ((v = getenv("SUBZEROCLAW_COMPACT_EXTRA"))) snprintf(cfg->compact_extra, MAX_EXTRA, "%s", v);
     if (!cfg->api_key[0]) { fprintf(stderr, "error: no api_key\n"); return -1; }
 
     /* Scrub the provider config from our own environment now that it lives in cfg.
@@ -80,8 +82,8 @@ int config_load(Config *cfg) {
        cfg, so requests are unaffected. */
     {
         static const char *const secret_vars[] = {
-            "SUBZEROCLAW_API_KEY",
-            "SUBZEROCLAW_ENDPOINT", "SUBZEROCLAW_REQUEST_EXTRA"
+            "SUBZEROCLAW_API_KEY", "SUBZEROCLAW_ENDPOINT",
+            "SUBZEROCLAW_REQUEST_EXTRA", "SUBZEROCLAW_COMPACT_EXTRA"
         };
         for (size_t i = 0; i < sizeof(secret_vars) / sizeof(secret_vars[0]); i++) {
             char *p = getenv(secret_vars[i]);
@@ -215,6 +217,7 @@ char *agent_build_system_prompt(const char *skills_dir) {
 typedef struct {
     char *finish_reason, *text;
     cJSON *tool_calls, *msg;
+    int compact;   /* router asked us to seal context (x_router.compact) */
 } Response;
 
 static void response_free(Response *r) {
@@ -302,6 +305,8 @@ static int parse_response(const char *body, Response *out) {
     cJSON *ct = cJSON_GetObjectItem(out->msg, "content");
     out->text = (ct && cJSON_IsString(ct)) ? ct->valuestring : NULL;
     out->tool_calls = cJSON_GetObjectItem(out->msg, "tool_calls");
+    cJSON *xr = cJSON_GetObjectItem(root, "x_router");
+    out->compact = xr && cJSON_IsTrue(cJSON_GetObjectItem(xr, "compact"));
     cJSON_Delete(root);
     return 0;
 }
@@ -313,65 +318,91 @@ static cJSON *make_msg(const char *role, const char *content) {
     return m;
 }
 
-static int compact_messages(const Config *cfg, cJSON *msgs, FILE *log) {
-    int total = cJSON_GetArraySize(msgs);
-    if (total <= cfg->max_messages) return 0;
-    fprintf(stderr, "[compact] %d msgs, summarizing\n", total);
-    log_write(log, "SYS", "compacting context");
+/* Context compaction is no longer summarized in C. The router's /v1/compact seals
+   the aged middle append-only (the frozen prefix + recent tail stay byte-identical,
+   so the prompt-cache prefix is never invalidated). We run it ASYNCHRONOUSLY: fire
+   the seal in the background, keep doing turns, and splice the result in when it
+   lands — so a turn is never blocked and nobody perceives a compaction pause. */
 
-    /* build text digest — keep user/assistant in full, trim only tool outputs */
-    size_t cap = 512000, len = 0;
-    char *convo = malloc(cap);
-    convo[0] = '\0';
-    cJSON *m = NULL;
-    cJSON_ArrayForEach(m, msgs) {
-        if (len + 256 >= cap) break;
-        cJSON *role = cJSON_GetObjectItem(m, "role");
-        cJSON *ct = cJSON_GetObjectItem(m, "content");
-        if (!role || !cJSON_IsString(role) || !ct || !cJSON_IsString(ct)) continue;
-        const char *r = role->valuestring, *c = ct->valuestring;
-        size_t clen = strlen(c);
-        if (!strcmp(r, "tool") && clen > 2000) {
-            /* tool outputs: first 1000 + ... + last 1000 */
-            len += snprintf(convo + len, cap - len, "tool: %.*s\n...[%zu bytes trimmed]...\n%s\n",
-                1000, c, clen - 2000, c + clen - 1000);
-        } else {
-            len += snprintf(convo + len, cap - len, "%s: %s\n", r, c);
+static char *read_file(const char *path) {
+    FILE *f = fopen(path, "r"); if (!f) return NULL;
+    size_t cap = 65536, len = 0, n;
+    char *buf = malloc(cap);
+    while (buf && (n = fread(buf + len, 1, cap - len - 1, f)) > 0) {
+        len += n;
+        if (len + 1 >= cap) { cap *= 2; char *nb = realloc(buf, cap);
+            if (!nb) { free(buf); buf = NULL; break; } buf = nb; }
+    }
+    if (buf) buf[len] = '\0';
+    fclose(f);
+    return buf;
+}
+
+/* The /v1/compact URL, derived from the chat endpoint. */
+static void compact_url(const Config *cfg, char *out, size_t sz) {
+    const char *e = cfg->endpoint, *p = strstr(e, "/chat/completions");
+    if (p) snprintf(out, sz, "%.*s/compact", (int)(p - e), e);
+    else   snprintf(out, sz, "%s/compact", e);
+}
+
+/* Fire an append-only seal of the current `msgs` in the BACKGROUND: POST to the
+   router's /v1/compact, atomically writing the spliced array to `res_path`. The
+   seal routing + keep_recent ride in SUBZEROCLAW_COMPACT_EXTRA. Returns 0 if
+   launched; the agent keeps looping and picks up the result on a later turn. */
+static int compact_fire(const Config *cfg, cJSON *msgs, char *res_path, size_t res_sz) {
+    cJSON *req = cJSON_CreateObject();
+    if (cfg->compact_extra[0]) {            /* keep_recent / policy_ir / max_tokens */
+        cJSON *extra = cJSON_Parse(cfg->compact_extra);
+        if (extra && cJSON_IsObject(extra)) {
+            cJSON *it = NULL;
+            cJSON_ArrayForEach(it, extra) {
+                cJSON *dup = cJSON_Duplicate(it, 1);
+                if (dup) cJSON_AddItemToObject(req, it->string, dup);
+            }
         }
+        if (extra) cJSON_Delete(extra);
     }
-    size_t plen = len + 128;
-    char *prompt = malloc(plen);
-    snprintf(prompt, plen, "Summarize this conversation. Keep all facts, file paths, "
-        "commands, and decisions. Be concise.\n\n%s", convo);
-    free(convo);
+    cJSON_AddItemReferenceToObject(req, "messages", msgs);
+    char *body = cJSON_PrintUnformatted(req);
+    cJSON_DetachItemFromObject(req, "messages");
+    cJSON_Delete(req);
+    if (!body) return -1;
 
-    cJSON *sm = cJSON_CreateArray();
-    cJSON_AddItemToArray(sm, make_msg("user", prompt)); free(prompt);
-    char *rb = llm_chat(cfg, sm, NULL);
-    cJSON_Delete(sm);
-    if (!rb) return -1;
+    char body_path[64], hdr_path[64];
+    if (write_temp("cbody", body, body_path, sizeof(body_path)) < 0) { free(body); return -1; }
+    free(body);
+    char hdr[MAX_VALUE + 64];
+    snprintf(hdr, sizeof(hdr), "-H \"Authorization: Bearer %s\"", cfg->api_key);
+    if (write_temp("chdr", hdr, hdr_path, sizeof(hdr_path)) < 0) { unlink(body_path); return -1; }
 
-    Response resp;
-    if (parse_response(rb, &resp) != 0 || !resp.text) { free(rb); response_free(&resp); return -1; }
-    char *summary = strdup(resp.text); free(rb); response_free(&resp);
-    log_write(log, "COMPACT", summary);
+    char url[MAX_VALUE + 16]; compact_url(cfg, url, sizeof(url));
+    snprintf(res_path, res_sz, "/tmp/.szc_cres_%d", (int)getpid());
+    /* atomic: write .tmp then rename, so res_path appears only when complete; the
+       subshell cleans its own temp files and detaches (&) so this returns at once. */
+    char cmd[2048 + MAX_VALUE];
+    snprintf(cmd, sizeof(cmd),
+        "( curl -s -m 120 -K '%s' -H 'Content-Type: application/json' -d @'%s' '%s' "
+        "-o '%s.tmp' && mv '%s.tmp' '%s' ; rm -f '%s' '%s' ) >/dev/null 2>&1 &",
+        hdr_path, body_path, url, res_path, res_path, res_path, body_path, hdr_path);
+    return system(cmd) == 0 ? 0 : -1;
+}
 
-    /* keep last ~10 msgs, but skip orphaned tool msgs at the boundary
-       (their tool_call_ids reference deleted assistant msgs → API rejects) */
-    int start = total - 10;
-    if (start < 1) start = 1;
-    while (start < total - 1) {
-        cJSON *r = cJSON_GetObjectItem(cJSON_GetArrayItem(msgs, start), "role");
-        if (!r || strcmp(r->valuestring, "tool") != 0) break;
-        start++;
+/* A background seal finished: replace the `snapshot_len` compacted messages with
+   the sealed view, keeping every turn that arrived while it ran (append-only ⇒
+   conflict-free). */
+static void compact_splice(cJSON *msgs, int snapshot_len, const char *res_path, FILE *log) {
+    char *buf = read_file(res_path);
+    unlink(res_path);
+    if (!buf) return;
+    cJSON *root = cJSON_Parse(buf); free(buf);
+    cJSON *sp = root ? cJSON_GetObjectItem(root, "messages") : NULL;
+    if (sp && cJSON_IsArray(sp) && cJSON_GetArraySize(msgs) >= snapshot_len) {
+        for (int i = 0; i < snapshot_len; i++) cJSON_DeleteItemFromArray(msgs, 0);
+        for (int i = cJSON_GetArraySize(sp) - 1; i >= 0; i--)
+            cJSON_InsertItemInArray(msgs, 0, cJSON_Duplicate(cJSON_GetArrayItem(sp, i), 1));
+        log_write(log, "SYS", "context compacted (append-only, async)");
     }
-
-    for (int i = start - 1; i >= 1; i--)
-        cJSON_DeleteItemFromArray(msgs, i);
-    cJSON_InsertItemInArray(msgs, 1, make_msg("user", "[Summary of previous context]"));
-    cJSON_InsertItemInArray(msgs, 2, make_msg("assistant", summary));
-    free(summary);
-    return 0;
+    if (root) cJSON_Delete(root);
 }
 
 static void process_tool_calls(cJSON *tool_calls, cJSON *msgs, FILE *log) {
@@ -411,8 +442,15 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
     cJSON_AddItemToArray(msgs, make_msg("user", input));
     log_write(log, "USER", input);
 
+    int compacting = 0, snapshot_len = 0;
+    char compact_res[80] = {0};
     for (int turn = 1; turn <= cfg->max_turns; turn++) {
-        compact_messages(cfg, msgs, log);
+        /* a background seal finished while we kept working? splice it in now —
+           append-only, so it never collides with the turns added meanwhile. */
+        if (compacting && access(compact_res, F_OK) == 0) {
+            compact_splice(msgs, snapshot_len, compact_res, log);
+            compacting = 0;
+        }
         fprintf(stderr, "[%d] ...\n", turn);
         char *rb = llm_chat(cfg, msgs, tools);
         if (!rb) return -1;
@@ -421,16 +459,23 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
         free(rb);
         cJSON_AddItemToArray(msgs, resp.msg); resp.msg = NULL;
 
+        /* router signalled context pressure: seal in the background and keep going */
+        if (resp.compact && !compacting && cfg->compact_extra[0]) {
+            snapshot_len = cJSON_GetArraySize(msgs);
+            if (compact_fire(cfg, msgs, compact_res, sizeof(compact_res)) == 0)
+                compacting = 1;
+        }
+
         if (!strcmp(resp.finish_reason, "stop")) {
             if (resp.text) { printf("%s\n", resp.text); log_write(log, "ASST", resp.text); }
-            free(resp.finish_reason); return 0;
+            response_free(&resp); return 0;   /* msg already transferred; frees finish_reason */
         }
         if (!strcmp(resp.finish_reason, "tool_calls") && resp.tool_calls) {
             process_tool_calls(resp.tool_calls, msgs, log);
-            free(resp.finish_reason); continue;
+            response_free(&resp); continue;
         }
         if (resp.text) { printf("%s\n", resp.text); log_write(log, "ASST", resp.text); }
-        free(resp.finish_reason); return 0;
+        response_free(&resp); return 0;
     }
     fprintf(stderr, "error: max turns (%d) reached\n", cfg->max_turns);
     return -1;

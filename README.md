@@ -24,7 +24,7 @@ You write a skill as a markdown file. You point SubZeroClaw at it. It calls an L
 ~/.subzeroclaw/logs/<session>.txt   ← full I/O trace
 ```
 
-The agent reads the skill into its system prompt, receives input, and autonomously calls tools until the task is complete. When context gets full, it compacts old messages into a summary and keeps going.
+The agent reads the skill into its system prompt, receives input, and autonomously calls tools until the task is complete. When context grows, the router signals it and the agent seals the old turns **asynchronously** (append-only, in the background) — it never pauses to compact (see "Routing & compaction via unhardcoded").
 
 ## Quickstart
 
@@ -60,9 +60,14 @@ SubZeroClaw points its `endpoint` at [**unhardcoded**](https://github.com/genlay
   to the peer that already holds its prompt-cache prefix (SubZeroClaw sends a
   per-run `session` id for that affinity), e.g.
   `{"model":"policy:auto","policy_ir":[ "policy", … cache_hot affinity … ]}`.
-- **Compaction** — the router seals the aged context append-only and signals when
-  (an `x_router.compact` flag on the response), so the agent never re-summarizes
-  in C. *(The agent-side wiring lands in the companion change.)*
+- **Compaction** — when the router signals context pressure (an `x_router.compact`
+  flag on the response), SubZeroClaw fires an append-only seal at the router's
+  `/v1/compact` **in the background** and keeps taking turns; when the sealed block
+  lands it splices it in *ahead* of the turns that arrived meanwhile. Compaction is
+  asynchronous — no turn is ever blocked, the prompt-cache prefix is never
+  rewritten, and you never see a pause. The seal routing + how many recent turns to
+  keep verbatim ride in `SUBZEROCLAW_COMPACT_EXTRA` (the second JSON), e.g.
+  `{"keep_recent":8,"policy_ir":[ "policy", … cheap summariser … ]}`.
 
 This is SubZeroClaw being *more* itself: the loop, the shell, the skill — plus a
 single MIT dependency for the substrate concerns. Point `endpoint` at a plain
@@ -147,10 +152,13 @@ Environment variables override the config file:
 ```
 SUBZEROCLAW_API_KEY
 SUBZEROCLAW_ENDPOINT
-SUBZEROCLAW_REQUEST_EXTRA   # JSON merged into every request body. Carries the model
-                           #   ({"model":"..."}); against an unhardcoded router it carries
+SUBZEROCLAW_REQUEST_EXTRA   # the LOOP JSON, merged into every request body. Carries the
+                           #   model ({"model":"..."}); against an unhardcoded router it carries
                            #   the routing policy too ({"model":"policy:auto","policy_ir":[...]}).
                            #   On a key collision the override wins.
+SUBZEROCLAW_COMPACT_EXTRA  # the COMPACTION JSON. When set, an x_router.compact signal triggers
+                           #   an async append-only seal at the router's /v1/compact; this carries
+                           #   keep_recent + the cheap summariser policy_ir. Unset -> no compaction.
 ```
 
 ## Usage
@@ -215,7 +223,8 @@ No vector DB. No embeddings. One API call to compress context.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `api_key` | (required) | OpenRouter (or unhardcoded) API key |
-| `request_extra` | (none) | JSON merged into every request body — carries the `model`, and against an unhardcoded router the routing `policy_ir` |
+| `request_extra` | (none) | the loop JSON merged into every request body — carries the `model`, and against an unhardcoded router the routing `policy_ir` |
+| `compact_extra` | (none) | the compaction JSON — `keep_recent` + the cheap summariser `policy_ir`; unset disables compaction |
 | `endpoint` | `https://openrouter.ai/api/v1/chat/completions` | API endpoint (point it at an unhardcoded router for routing/cache/compaction) |
 | `skills_dir` | `~/.subzeroclaw/skills` | Path to skill markdown files |
 | `log_dir` | `~/.subzeroclaw/logs` | Session log directory |
