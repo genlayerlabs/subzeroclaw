@@ -279,10 +279,10 @@ static void test_skills_loading(void) {
 /* ======== REQUEST BUILDING TESTS ======== */
 
 static void test_build_request(void) {
-    TEST("build_request: JSON structure");
+    TEST("build_request: JSON structure + session, no hardcoded model");
     Config cfg;
     memset(&cfg, 0, sizeof(cfg));
-    snprintf(cfg.model, MAX_VALUE, "test-model");
+    snprintf(cfg.session, MAX_VALUE, "sid-123");
     cJSON *msgs = cJSON_CreateArray();
     cJSON_AddItemToArray(msgs, make_msg("system", "hello"));
     cJSON *tools = cJSON_Parse(TOOLS_JSON);
@@ -290,10 +290,12 @@ static void test_build_request(void) {
     assert(json);
     cJSON *req = cJSON_Parse(json);
     assert(req);
+    cJSON *session = cJSON_GetObjectItem(req, "session");
     cJSON *model = cJSON_GetObjectItem(req, "model");
     cJSON *m = cJSON_GetObjectItem(req, "messages");
     cJSON *t = cJSON_GetObjectItem(req, "tools");
-    if (model && strcmp(model->valuestring, "test-model") == 0 &&
+    if (session && strcmp(session->valuestring, "sid-123") == 0 &&
+        !model &&                       /* the agent ships no model; it rides in REQUEST_EXTRA */
         m && cJSON_GetArraySize(m) == 1 &&
         t && cJSON_GetArraySize(t) == 1)
         PASS();
@@ -306,7 +308,6 @@ static void test_build_request(void) {
 static void test_build_request_extra_merge(void) {
     TEST("build_request: REQUEST_EXTRA merges, override wins");
     Config cfg; memset(&cfg, 0, sizeof(cfg));
-    snprintf(cfg.model, MAX_VALUE, "base-model");
     snprintf(cfg.request_extra, MAX_EXTRA,
         "{\"temperature\": 0.5, \"model\": \"override-model\"}");
     cJSON *msgs = cJSON_CreateArray();
@@ -331,12 +332,10 @@ static void test_build_request_extra_merge(void) {
 static void test_build_request_extra_empty(void) {
     TEST("build_request: empty REQUEST_EXTRA leaves body unchanged");
     Config cfg; memset(&cfg, 0, sizeof(cfg));
-    snprintf(cfg.model, MAX_VALUE, "m");
     cJSON *msgs = cJSON_CreateArray();
     char *json = build_request(&cfg, msgs, NULL);
     cJSON *req = cJSON_Parse(json); assert(req);
-    if (cJSON_GetArraySize(req) == 2 &&        /* exactly model + messages */
-        cJSON_GetObjectItem(req, "model") &&
+    if (cJSON_GetArraySize(req) == 1 &&        /* exactly messages (no session, no model) */
         cJSON_GetObjectItem(req, "messages"))
         PASS();
     else FAIL("body changed when unset");
@@ -346,12 +345,11 @@ static void test_build_request_extra_empty(void) {
 static void test_build_request_extra_garbage(void) {
     TEST("build_request: malformed REQUEST_EXTRA ignored");
     Config cfg; memset(&cfg, 0, sizeof(cfg));
-    snprintf(cfg.model, MAX_VALUE, "m");
     snprintf(cfg.request_extra, MAX_EXTRA, "{not valid json");
     cJSON *msgs = cJSON_CreateArray();
     char *json = build_request(&cfg, msgs, NULL);
     cJSON *req = cJSON_Parse(json);            /* request must still be valid */
-    if (req && cJSON_GetObjectItem(req, "model") && cJSON_GetObjectItem(req, "messages"))
+    if (req && cJSON_GetObjectItem(req, "messages"))
         PASS();
     else FAIL("garbage broke the request");
     if (req) cJSON_Delete(req); free(json); cJSON_Delete(msgs);
@@ -362,7 +360,6 @@ static void test_build_request_extra_garbage(void) {
 static void test_config_no_key(void) {
     TEST("config: fails without API key");
     unsetenv("SUBZEROCLAW_API_KEY");
-    unsetenv("SUBZEROCLAW_MODEL");
     unsetenv("SUBZEROCLAW_ENDPOINT");
     Config cfg;
     /* point config at nonexistent file so file parsing is skipped */
@@ -394,7 +391,6 @@ static void test_config_scrubs_env(void) {
     char *old_home = getenv("HOME") ? strdup(getenv("HOME")) : NULL;
     setenv("HOME", "/tmp/szc_no_config", 1); /* skip any real config file */
     setenv("SUBZEROCLAW_API_KEY", "sk-test-scrub", 1);
-    setenv("SUBZEROCLAW_MODEL", "test/model", 1);
     setenv("SUBZEROCLAW_ENDPOINT", "https://test.example/v1/chat", 1);
     setenv("SUBZEROCLAW_REQUEST_EXTRA", "{\"temperature\":0}", 1);
     Config cfg;
@@ -405,13 +401,11 @@ static void test_config_scrubs_env(void) {
     /* values survive in cfg, so requests are unaffected... */
     int cfg_ok = rc == 0 &&
         strcmp(cfg.api_key, "sk-test-scrub") == 0 &&
-        strcmp(cfg.model, "test/model") == 0 &&
         strcmp(cfg.endpoint, "https://test.example/v1/chat") == 0 &&
         strcmp(cfg.request_extra, "{\"temperature\":0}") == 0;
     /* ...but are gone from the environment the shell tool inherits */
     int env_scrubbed =
         getenv("SUBZEROCLAW_API_KEY") == NULL &&
-        getenv("SUBZEROCLAW_MODEL") == NULL &&
         getenv("SUBZEROCLAW_ENDPOINT") == NULL &&
         getenv("SUBZEROCLAW_REQUEST_EXTRA") == NULL;
 

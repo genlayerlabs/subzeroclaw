@@ -16,15 +16,16 @@
 #define MAX_EXTRA  8192   /* request_extra: an operator-supplied JSON body override */
 
 typedef struct {
-    char api_key[MAX_VALUE], model[MAX_VALUE], endpoint[MAX_VALUE];
+    char api_key[MAX_VALUE], endpoint[MAX_VALUE];
     char skills_dir[MAX_PATH], log_dir[MAX_PATH];
     char request_extra[MAX_EXTRA];
+    char session[MAX_VALUE];   /* runtime per-run id (sid); sent so the router can
+                                  keep this conversation pinned to its cache-hot peer */
     int  max_turns, max_messages;
 } Config;
 
 static void config_parse_line(Config *cfg, const char *key, const char *val) {
     if      (!strcmp(key, "api_key"))      snprintf(cfg->api_key,    MAX_VALUE, "%s", val);
-    else if (!strcmp(key, "model"))        snprintf(cfg->model,      MAX_VALUE, "%s", val);
     else if (!strcmp(key, "endpoint"))     snprintf(cfg->endpoint,   MAX_VALUE, "%s", val);
     else if (!strcmp(key, "skills_dir"))   snprintf(cfg->skills_dir, MAX_PATH,  "%s", val);
     else if (!strcmp(key, "log_dir"))      snprintf(cfg->log_dir,    MAX_PATH,  "%s", val);
@@ -38,7 +39,6 @@ int config_load(Config *cfg) {
     if (!home) home = ".";
     memset(cfg, 0, sizeof(*cfg));
     snprintf(cfg->endpoint,   MAX_VALUE, "https://openrouter.ai/api/v1/chat/completions");
-    snprintf(cfg->model,      MAX_VALUE, "minimax/minimax-m2.5");
     snprintf(cfg->skills_dir, MAX_PATH,  "%s/.subzeroclaw/skills", home);
     snprintf(cfg->log_dir,    MAX_PATH,  "%s/.subzeroclaw/logs", home);
     cfg->max_turns = 200; cfg->max_messages = 40;
@@ -65,7 +65,6 @@ int config_load(Config *cfg) {
     }
     char *v;
     if ((v = getenv("SUBZEROCLAW_API_KEY")))  snprintf(cfg->api_key,  MAX_VALUE, "%s", v);
-    if ((v = getenv("SUBZEROCLAW_MODEL")))    snprintf(cfg->model,    MAX_VALUE, "%s", v);
     if ((v = getenv("SUBZEROCLAW_ENDPOINT"))) snprintf(cfg->endpoint, MAX_VALUE, "%s", v);
     if ((v = getenv("SUBZEROCLAW_REQUEST_EXTRA"))) snprintf(cfg->request_extra, MAX_EXTRA, "%s", v);
     if (!cfg->api_key[0]) { fprintf(stderr, "error: no api_key\n"); return -1; }
@@ -81,7 +80,7 @@ int config_load(Config *cfg) {
        cfg, so requests are unaffected. */
     {
         static const char *const secret_vars[] = {
-            "SUBZEROCLAW_API_KEY", "SUBZEROCLAW_MODEL",
+            "SUBZEROCLAW_API_KEY",
             "SUBZEROCLAW_ENDPOINT", "SUBZEROCLAW_REQUEST_EXTRA"
         };
         for (size_t i = 0; i < sizeof(secret_vars) / sizeof(secret_vars[0]); i++) {
@@ -226,13 +225,18 @@ static void response_free(Response *r) {
 /* references avoid copying the full message array */
 static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
     cJSON *req = cJSON_CreateObject();
-    cJSON_AddStringToObject(req, "model", cfg->model);
+    /* Session id (if any): sent so the router can keep this conversation pinned to
+       the peer that already holds its prompt-cache prefix (cache_hot). */
+    if (cfg->session[0]) cJSON_AddStringToObject(req, "session", cfg->session);
 
-    /* Optional operator-supplied request-body override (SUBZEROCLAW_REQUEST_EXTRA):
-       a JSON object whose top-level keys are merged in. Empty/unset → unchanged;
-       malformed → ignored; on a key collision the override wins. Applied before
-       messages/tools so it can replace `model` and add params (temperature, …)
-       without colliding with the reference items below. */
+    /* The model is NOT hardcoded by the agent. It rides in the operator's
+       SUBZEROCLAW_REQUEST_EXTRA — "model":"policy:auto" plus a "policy_ir" to let
+       the unhardcoded router decide, or a concrete model for a direct provider.
+       SUBZEROCLAW_REQUEST_EXTRA is a JSON object whose top-level keys are merged
+       in: empty/unset → unchanged; malformed → ignored; on a key collision the
+       override wins. Applied before messages/tools so it can add `model`,
+       `policy_ir`, params (temperature, …) without colliding with the reference
+       items below. */
     if (cfg->request_extra[0]) {
         cJSON *extra = cJSON_Parse(cfg->request_extra);
         if (extra && cJSON_IsObject(extra)) {
@@ -409,7 +413,7 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
 
     for (int turn = 1; turn <= cfg->max_turns; turn++) {
         compact_messages(cfg, msgs, log);
-        fprintf(stderr, "[%d] %s...\n", turn, cfg->model);
+        fprintf(stderr, "[%d] ...\n", turn);
         char *rb = llm_chat(cfg, msgs, tools);
         if (!rb) return -1;
         Response resp;
@@ -480,6 +484,7 @@ int main(int argc, char **argv) {
                   b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
           fclose(ur); }
       if (!sid[0]) snprintf(sid, sizeof(sid), "%lx%x", (long)time(NULL), getpid()); }
+    snprintf(cfg.session, MAX_VALUE, "%s", sid);  /* sent on every request for cache affinity */
     mkdirp(cfg.log_dir);
     char lp[600]; snprintf(lp, sizeof(lp), "%s/%s.txt", cfg.log_dir, sid);
     FILE *log = fopen(lp, "a");
@@ -489,7 +494,7 @@ int main(int argc, char **argv) {
     cJSON_AddItemToArray(msgs, make_msg("system", sysprompt));
     cJSON *tools = cJSON_Parse(TOOLS_JSON);
     int rc = 0;
-    fprintf(stderr, "subzeroclaw · %s · %s\n", cfg.model, sid);
+    fprintf(stderr, "subzeroclaw · %s\n", sid);
 
     if (argc > 1) {
         char input[4096], *p = input, *end = input + sizeof(input) - 1;
