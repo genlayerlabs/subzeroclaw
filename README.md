@@ -212,16 +212,6 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 [2026-02-16 16:30:04] ASST: Disk usage is at 72%, below threshold.
 ```
 
-## Context compaction
-
-When the message history exceeds `max_messages` (default 40), the agent:
-
-1. Sends old messages to the LLM for summarization
-2. Replaces them with the summary
-3. Keeps the last N raw messages intact
-
-No vector DB. No embeddings. One API call to compress context.
-
 ## Config reference
 
 | Key | Default | Description |
@@ -233,7 +223,6 @@ No vector DB. No embeddings. One API call to compress context.
 | `skills_dir` | `~/.subzeroclaw/skills` | Path to skill markdown files |
 | `log_dir` | `~/.subzeroclaw/logs` | Session log directory |
 | `max_turns` | 200 | Max tool-call loops per input |
-| `max_messages` | 40 | Trigger context compaction |
 
 ## Troubleshooting
 
