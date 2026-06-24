@@ -67,6 +67,10 @@ int config_load(Config *cfg) {
     char *v;
     if ((v = getenv("SUBZEROCLAW_API_KEY")))  snprintf(cfg->api_key,  MAX_VALUE, "%s", v);
     if ((v = getenv("SUBZEROCLAW_ENDPOINT"))) snprintf(cfg->endpoint, MAX_VALUE, "%s", v);
+    /* Per-agent skills dir from the orchestrator (genswarms wrapper exports this).
+       Overrides the config-file / default ~/.subzeroclaw/skills so each agent in a
+       swarm loads its OWN configured skill instead of the host default. */
+    if ((v = getenv("SUBZEROCLAW_SKILLS"))) snprintf(cfg->skills_dir, MAX_PATH, "%s", v);
     if ((v = getenv("SUBZEROCLAW_REQUEST_EXTRA"))) snprintf(cfg->request_extra, MAX_EXTRA, "%s", v);
     if ((v = getenv("SUBZEROCLAW_COMPACT_EXTRA"))) snprintf(cfg->compact_extra, MAX_EXTRA, "%s", v);
     if (!cfg->api_key[0]) { fprintf(stderr, "error: no api_key\n"); return -1; }
