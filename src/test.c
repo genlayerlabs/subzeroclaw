@@ -250,6 +250,44 @@ static void test_full_tool_dispatch(void) {
     free(result);
 }
 
+/* ======== MALFORMED TOOL-CALL TESTS ======== */
+
+/* Build one tool_call object: {"id":..,"function":{"name":"shell","arguments":<args_json>}}.
+   `arguments` is the model-supplied JSON string (subzeroclaw cJSON_Parses it). */
+static cJSON *mk_tool_call(const char *id, const char *args_json) {
+    cJSON *tc = cJSON_CreateObject();
+    cJSON_AddStringToObject(tc, "id", id);
+    cJSON *fn = cJSON_CreateObject();
+    cJSON_AddStringToObject(fn, "name", "shell");
+    cJSON_AddStringToObject(fn, "arguments", args_json);
+    cJSON_AddItemToObject(tc, "function", fn);
+    return tc;
+}
+
+static void test_round_has_command(void) {
+    TEST("round_has_command: real vs empty tool-call rounds");
+    cJSON *valid = cJSON_CreateArray();
+    cJSON_AddItemToArray(valid, mk_tool_call("c1", "{\"command\":\"echo hi\"}"));
+    cJSON *empty = cJSON_CreateArray();
+    cJSON_AddItemToArray(empty, mk_tool_call("c1", ""));                /* arguments "" — the real bug */
+    cJSON_AddItemToArray(empty, mk_tool_call("c2", "{}"));             /* no command key */
+    cJSON *mixed = cJSON_CreateArray();
+    cJSON_AddItemToArray(mixed, mk_tool_call("c1", ""));               /* empty */
+    cJSON_AddItemToArray(mixed, mk_tool_call("c2", "{\"command\":\"ls\"}")); /* valid */
+    cJSON *blank = cJSON_CreateArray();
+    cJSON_AddItemToArray(blank, mk_tool_call("c1", "{\"command\":\"\"}"));   /* blank command string */
+    cJSON *none = cJSON_CreateArray();
+    int ok =
+        round_has_command(valid) == 1 &&
+        round_has_command(empty) == 0 &&
+        round_has_command(mixed) == 1 &&
+        round_has_command(blank) == 0 &&
+        round_has_command(none)  == 0;
+    if (ok) PASS(); else FAIL("round_has_command mismatch");
+    cJSON_Delete(valid); cJSON_Delete(empty); cJSON_Delete(mixed);
+    cJSON_Delete(blank); cJSON_Delete(none);
+}
+
 /* ======== SYSTEM PROMPT / SKILLS TEST ======== */
 
 static void test_system_prompt(void) {
@@ -487,6 +525,7 @@ int main(void) {
     test_parse_compact_flag();
     test_compact_splice();
     test_full_tool_dispatch();
+    test_round_has_command();
     test_system_prompt();
     test_skills_loading();
     test_config_no_key();
