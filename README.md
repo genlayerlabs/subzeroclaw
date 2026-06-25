@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="szc-logo.png" alt="SubZeroClaw" width="400">
+  <img src="logo.svg" alt="SubZeroClaw" width="180">
 </p>
 
 # SubZeroClaw
 
 > **WARNING: This software executes arbitrary shell commands with no safety checks, no confirmation prompts, no sandboxing, and no guardrails. The LLM decides what to run and the runtime runs it — `rm -rf /` included. There is nothing between the model's output and your system. If you don't understand what that means, do not use this. This is a bare agentic loop: execute the task, whatever it takes, nothing more, nothing less.**
 
-**~380 lines of C. 54KB binary. A skill-driven agentic daemon for edge hardware.**
+**~550 lines of C. 55KB binary. A skill-driven agentic daemon for edge hardware.**
 
 ```
 skill.md + LLM + shell + loop = autonomous agent
@@ -31,7 +31,7 @@ The agent reads the skill into its system prompt, receives input, and autonomous
 ```bash
 git clone https://github.com/genlayerlabs/subzeroclaw
 cd subzeroclaw
-make                          # builds the 54KB binary in ~0.5s
+make                          # builds the 55KB binary in ~0.5s
 
 mkdir -p ~/.subzeroclaw/skills
 cat > ~/.subzeroclaw/config << 'EOF'
@@ -89,11 +89,11 @@ SubZeroClaw doesn't simplify their architecture. It ignores it and writes the lo
 |                   | SubZeroClaw  | ZeroClaw     | OpenClaw     |
 |-------------------|--------------|--------------|--------------|
 | Language          | C            | Rust         | TypeScript   |
-| Source            | ~380 lines   | ~15,000      | ~430,000     |
-| Binary            | 54 KB        | 3.4 MB       | 80+ MB       |
-| RAM (runtime)     | ~2 MB        | < 5 MB       | 80-120 MB    |
-| Compiles on Pi    | 0.5s         | OOM          | slow         |
-| Dependencies      | curl, cJSON  | ~100 crates  | ~800 npm     |
+| Source            | ~550 lines        | ~15,000      | ~430,000     |
+| Binary            | 55 KB             | 3.4 MB       | 80+ MB       |
+| RAM (runtime)     | ~2 MB             | < 5 MB       | 80-120 MB    |
+| Compiles on Pi    | 0.5s              | OOM          | slow         |
+| Dependencies      | curl, unhardcoded | ~100 crates  | ~800 npm     |
 
 ## Tool
 
@@ -122,7 +122,7 @@ The skills included in this repo (`skills/`) are just examples to show the forma
 ## Build
 
 ```bash
-make            # builds subzeroclaw (54KB)
+make            # builds subzeroclaw (55KB)
 make test       # runs the test suite
 make install    # copies to ~/.local/bin/
 ```
@@ -237,7 +237,7 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 
 ```
 src/
-├── subzeroclaw.c   ~380 lines  The entire runtime
+├── subzeroclaw.c   ~550 lines  The entire runtime
 ├── test.c                      the test suite
 ├── cJSON.c                     Vendored JSON parser
 └── cJSON.h
@@ -253,7 +253,7 @@ Every layer of "framework" between the model and the shell is complexity that ad
 
 OpenClaw solved the agentic loop with 430,000 lines of TypeScript. ZeroClaw re-solved it with 15,000 lines of Rust. Both are good — but both carry the weight of problems that only exist at platform scale: multi-tenancy, channel routing, identity portability, plugin registries.
 
-SubZeroClaw asks: what if the problem is just "one agent, one skill, one device"? Then the answer is ~380 readable lines of C.
+SubZeroClaw asks: what if the problem is just "one agent, one skill, one device"? Then the answer is ~550 readable lines of C.
 
 ## License
 
