@@ -448,6 +448,25 @@ static void process_tool_calls(cJSON *tool_calls, cJSON *msgs, FILE *log) {
     }
 }
 
+/* Does this tool-call round contain at least one call with a usable (non-empty)
+   command? An all-empty round — every `arguments` empty/""/no "command"/blank
+   command — is a model hiccup (codex can emit arguments:"" under load) that we
+   refuse to record, so it can't poison the history and spiral. */
+static int round_has_command(cJSON *tool_calls) {
+    cJSON *tc = NULL;
+    cJSON_ArrayForEach(tc, tool_calls) {
+        cJSON *fn = cJSON_GetObjectItem(tc, "function");
+        cJSON *args = fn ? cJSON_GetObjectItem(fn, "arguments") : NULL;
+        if (!args || !cJSON_IsString(args)) continue;
+        cJSON *parsed = cJSON_Parse(args->valuestring);
+        cJSON *cmd = parsed ? cJSON_GetObjectItem(parsed, "command") : NULL;
+        int ok = cmd && cJSON_IsString(cmd) && cmd->valuestring[0] != '\0';
+        if (parsed) cJSON_Delete(parsed);
+        if (ok) return 1;
+    }
+    return 0;
+}
+
 static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
                      const char *input, FILE *log)
 {
@@ -469,6 +488,23 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
         Response resp;
         if (parse_response(rb, &resp) != 0) { free(rb); return -1; }
         free(rb);
+
+        /* Discard a tool-call round with no runnable command instead of recording it,
+           so the model can't few-shot off its own malformed call and spiral (codex
+           emits empty arguments:"" under load). max_turns bounds a persistent loop.
+
+           Integrity (object §3): the discard drops BOTH halves of the round
+           atomically — the assistant msg is never appended and process_tool_calls
+           never runs — so no tool_call_id is left orphaned (orphan → API 400). A
+           MIXED round (at least one call carries a command) is recorded instead,
+           and process_tool_calls then pairs every id with a `tool` reply, the empty
+           calls included (asserted by test_recorded_round_pairs_every_call). */
+        if (!strcmp(resp.finish_reason, "tool_calls") && resp.tool_calls &&
+            !round_has_command(resp.tool_calls)) {
+            response_free(&resp);   /* discard: the empty call never enters history */
+            continue;
+        }
+
         cJSON_AddItemToArray(msgs, resp.msg); resp.msg = NULL;
 
         /* router signalled context pressure: seal in the background and keep going */
