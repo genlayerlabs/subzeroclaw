@@ -1,0 +1,11 @@
+<svg width="180" height="180" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SubZeroClaw">
+  <defs>
+    <radialGradient id="sun" cx="38%" cy="33%" r="78%">
+      <stop offset="0%" stop-color="#C9633F"/>
+      <stop offset="60%" stop-color="#A84E36"/>
+      <stop offset="100%" stop-color="#7E3A22"/>
+    </radialGradient>
+  </defs>
+  <circle cx="20" cy="20" r="10" fill="url(#sun)"/>
+  <circle cx="12.5" cy="27.5" r="4.2" fill="#26241F"/>
+</svg>
