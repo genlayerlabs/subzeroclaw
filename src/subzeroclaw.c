@@ -491,7 +491,14 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
 
         /* Discard a tool-call round with no runnable command instead of recording it,
            so the model can't few-shot off its own malformed call and spiral (codex
-           emits empty arguments:"" under load). max_turns bounds a persistent loop. */
+           emits empty arguments:"" under load). max_turns bounds a persistent loop.
+
+           Integrity (object §3): the discard drops BOTH halves of the round
+           atomically — the assistant msg is never appended and process_tool_calls
+           never runs — so no tool_call_id is left orphaned (orphan → API 400). A
+           MIXED round (at least one call carries a command) is recorded instead,
+           and process_tool_calls then pairs every id with a `tool` reply, the empty
+           calls included (asserted by test_recorded_round_pairs_every_call). */
         if (!strcmp(resp.finish_reason, "tool_calls") && resp.tool_calls &&
             !round_has_command(resp.tool_calls)) {
             response_free(&resp);   /* discard: the empty call never enters history */

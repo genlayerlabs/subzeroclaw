@@ -288,6 +288,36 @@ static void test_round_has_command(void) {
     cJSON_Delete(blank); cJSON_Delete(none);
 }
 
+/* The kept path's integrity invariant (object §3): a round round_has_command lets
+   through (some call carries a command) is RECORDED, so process_tool_calls must
+   leave no orphan — every tool_call_id, the empty ones included, gets a matching
+   `tool` reply or the next request 400s. Asserted on a MIXED round, exactly the
+   shape the discard guard keeps. (round_has_command, the discard gate, is covered
+   above; here we pin the complementary record-and-pair half.) */
+static void test_recorded_round_pairs_every_call(void) {
+    TEST("recorded mixed round: every tool_call_id paired (no orphan)");
+    cJSON *tool_calls = cJSON_CreateArray();
+    cJSON_AddItemToArray(tool_calls, mk_tool_call("c1", ""));                          /* empty — kept because the round is mixed */
+    cJSON_AddItemToArray(tool_calls, mk_tool_call("c2", "{\"command\":\"echo ok\"}")); /* runnable */
+    cJSON *msgs = cJSON_CreateArray();
+    process_tool_calls(tool_calls, msgs, NULL);
+
+    int n = cJSON_GetArraySize(msgs), seen_c1 = 0, seen_c2 = 0, all_tool = 1;
+    for (int i = 0; i < n; i++) {
+        cJSON *m = cJSON_GetArrayItem(msgs, i);
+        cJSON *role = cJSON_GetObjectItem(m, "role");
+        cJSON *tcid = cJSON_GetObjectItem(m, "tool_call_id");
+        if (!role || !cJSON_IsString(role) || strcmp(role->valuestring, "tool")) all_tool = 0;
+        if (tcid && cJSON_IsString(tcid) && !strcmp(tcid->valuestring, "c1")) seen_c1 = 1;
+        if (tcid && cJSON_IsString(tcid) && !strcmp(tcid->valuestring, "c2")) seen_c2 = 1;
+    }
+    if (n == 2 && all_tool && seen_c1 && seen_c2) PASS();
+    else FAIL("orphaned tool_call_id (mixed round not fully paired)");
+
+    cJSON_Delete(tool_calls);
+    cJSON_Delete(msgs);
+}
+
 /* ======== SYSTEM PROMPT / SKILLS TEST ======== */
 
 static void test_system_prompt(void) {
@@ -526,6 +556,7 @@ int main(void) {
     test_compact_splice();
     test_full_tool_dispatch();
     test_round_has_command();
+    test_recorded_round_pairs_every_call();
     test_system_prompt();
     test_skills_loading();
     test_config_no_key();
