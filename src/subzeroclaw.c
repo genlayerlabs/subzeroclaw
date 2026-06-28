@@ -417,6 +417,20 @@ static void compact_splice(cJSON *msgs, int snapshot_len, const char *res_path, 
     if (root) cJSON_Delete(root);
 }
 
+typedef struct {
+    int active;
+    int snapshot_len;
+    char res_path[80];
+} CompactState;
+
+static void compact_poll(cJSON *msgs, CompactState *compact, FILE *log) {
+    if (!compact || !compact->active || access(compact->res_path, F_OK) != 0) return;
+    compact_splice(msgs, compact->snapshot_len, compact->res_path, log);
+    compact->active = 0;
+    compact->snapshot_len = 0;
+    compact->res_path[0] = '\0';
+}
+
 static void process_tool_calls(cJSON *tool_calls, cJSON *msgs, FILE *log) {
     cJSON *tc = NULL;
     cJSON_ArrayForEach(tc, tool_calls) {
@@ -467,21 +481,17 @@ static int round_has_command(cJSON *tool_calls) {
     return 0;
 }
 
-static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
+static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools, CompactState *compact,
                      const char *input, FILE *log)
 {
+    compact_poll(msgs, compact, log);
     cJSON_AddItemToArray(msgs, make_msg("user", input));
     log_write(log, "USER", input);
 
-    int compacting = 0, snapshot_len = 0;
-    char compact_res[80] = {0};
     for (int turn = 1; turn <= cfg->max_turns; turn++) {
         /* a background seal finished while we kept working? splice it in now —
            append-only, so it never collides with the turns added meanwhile. */
-        if (compacting && access(compact_res, F_OK) == 0) {
-            compact_splice(msgs, snapshot_len, compact_res, log);
-            compacting = 0;
-        }
+        compact_poll(msgs, compact, log);
         fprintf(stderr, "[%d] ...\n", turn);
         char *rb = llm_chat(cfg, msgs, tools);
         if (!rb) return -1;
@@ -508,10 +518,14 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
         cJSON_AddItemToArray(msgs, resp.msg); resp.msg = NULL;
 
         /* router signalled context pressure: seal in the background and keep going */
-        if (resp.compact && !compacting && cfg->compact_extra[0]) {
-            snapshot_len = cJSON_GetArraySize(msgs);
-            if (compact_fire(cfg, msgs, compact_res, sizeof(compact_res)) == 0)
-                compacting = 1;
+        if (resp.compact && compact && !compact->active && cfg->compact_extra[0]) {
+            compact->snapshot_len = cJSON_GetArraySize(msgs);
+            if (compact_fire(cfg, msgs, compact->res_path, sizeof(compact->res_path)) == 0)
+                compact->active = 1;
+            else {
+                compact->snapshot_len = 0;
+                compact->res_path[0] = '\0';
+            }
         }
 
         if (!strcmp(resp.finish_reason, "stop")) {
@@ -586,6 +600,7 @@ int main(int argc, char **argv) {
     cJSON *msgs = cJSON_CreateArray();
     cJSON_AddItemToArray(msgs, make_msg("system", sysprompt));
     cJSON *tools = cJSON_Parse(TOOLS_JSON);
+    CompactState compact = {0};
     int rc = 0;
     fprintf(stderr, "subzeroclaw · %s\n", sid);
 
@@ -597,7 +612,7 @@ int main(int argc, char **argv) {
             memcpy(p, argv[i], l); p += l;
         }
         *p = '\0';
-        rc = agent_run(&cfg, msgs, tools, input, log);
+        rc = agent_run(&cfg, msgs, tools, &compact, input, log);
     } else {
         /* A human at a tty ends a turn with Enter ('\n'); a driving program
            (pipe/FIFO) ends each turn with a NUL byte, letting one turn carry
@@ -611,7 +626,7 @@ int main(int argc, char **argv) {
             if (!strcmp(input, "/quit") || !strcmp(input, "/exit")) {
                 free(input); break;
             }
-            agent_run(&cfg, msgs, tools, input, log);
+            agent_run(&cfg, msgs, tools, &compact, input, log);
             free(input);
             printf("\n<<TURN_COMPLETE>>\n");
             fflush(stdout);

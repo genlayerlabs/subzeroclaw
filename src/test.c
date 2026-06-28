@@ -125,7 +125,7 @@ static void test_turn_newline_framed_tty(void) {
 
 static void test_turn_eof_empty_is_null(void) {
     TEST("read_turn: EOF with no bytes returns NULL");
-    FILE *f = fmemopen("", 0, "r");
+    FILE *f = tmpfile();
     char *r = read_turn(f, '\0');
     if (r == NULL) PASS();
     else FAIL(r);
@@ -527,6 +527,42 @@ static void test_compact_splice(void) {
     cJSON_Delete(msgs);
 }
 
+static void test_compact_pending_splices_before_next_turn(void) {
+    TEST("compact pending: next turn rehydrates seal + raw tail");
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON_AddItemToArray(msgs, make_msg("system", "sys"));     /* 0 */
+    cJSON_AddItemToArray(msgs, make_msg("user", "u0"));        /* 1 */
+    cJSON_AddItemToArray(msgs, make_msg("assistant", "a0"));   /* 2 */
+
+    CompactState compact = {0};
+    compact.active = 1;
+    compact.snapshot_len = 3;
+    write_temp("testcres",
+        "{\"messages\":[{\"role\":\"system\",\"content\":\"sys\"},"
+        "{\"role\":\"system\",\"content\":\"SEALED\"},"
+        "{\"role\":\"user\",\"content\":\"u0\"},"
+        "{\"role\":\"assistant\",\"content\":\"a0\"}],\"compacted\":true}",
+        compact.res_path, sizeof(compact.res_path));
+
+    compact_poll(msgs, &compact, NULL);
+    cJSON_AddItemToArray(msgs, make_msg("user", "u1"));
+
+    int n = cJSON_GetArraySize(msgs);
+    cJSON *m1 = cJSON_GetArrayItem(msgs, 1);
+    cJSON *m2 = cJSON_GetArrayItem(msgs, 2);
+    cJSON *last = cJSON_GetArrayItem(msgs, n - 1);
+    cJSON *c1 = m1 ? cJSON_GetObjectItem(m1, "content") : NULL;
+    cJSON *c2 = m2 ? cJSON_GetObjectItem(m2, "content") : NULL;
+    cJSON *cl = last ? cJSON_GetObjectItem(last, "content") : NULL;
+    if (!compact.active && n == 5 &&
+        c1 && !strcmp(c1->valuestring, "SEALED") &&
+        c2 && !strcmp(c2->valuestring, "u0") &&
+        cl && !strcmp(cl->valuestring, "u1"))
+        PASS();
+    else FAIL("pending compact result was not installed before next turn");
+    cJSON_Delete(msgs);
+}
+
 int main(void) {
     printf("\n  SubZeroClaw test suite\n");
     printf("  ═══════════════════════════════════════════\n\n");
@@ -554,6 +590,7 @@ int main(void) {
     test_build_request_extra_garbage();
     test_parse_compact_flag();
     test_compact_splice();
+    test_compact_pending_splices_before_next_turn();
     test_full_tool_dispatch();
     test_round_has_command();
     test_recorded_round_pairs_every_call();
