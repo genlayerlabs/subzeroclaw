@@ -38,7 +38,7 @@ The loop, top to bottom:
 
 | Function | Role |
 |---|---|
-| `config_parse_line` / `config_load` | parse the config keys; env overrides; **scrub `SUBZEROCLAW_*` from the environment** so the model's shell never sees the key. |
+| `config_parse_line` / `config_load` | parse the config keys; env overrides; **scrub the four provider secrets** (`SUBZEROCLAW_API_KEY`/`_ENDPOINT`/`_REQUEST_EXTRA`/`_COMPACT_EXTRA`) from the environment (wipe-in-place + `unsetenv`) so the model's shell never sees the key. `SUBZEROCLAW_SKILLS` is preserved on purpose. |
 | `main` | read config + skills, build the system prompt, seed the message array, drive the loop. |
 | `agent_run` | the turn loop: POST to `endpoint`, parse, dispatch tools, until a stop or `max_turns`. |
 | `parse_response` | pull assistant text / tool calls / errors out of the completion JSON. |

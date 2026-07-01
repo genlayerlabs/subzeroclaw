@@ -50,7 +50,7 @@ is the canonical template.
 
 | Key | Meaning |
 |---|---|
-| `api_key` | OpenRouter (or unhardcoded router) key. **Required.** |
+| `api_key` | The unhardcoded router **consumer key** (`llmr_…`) — SubZeroClaw is designed to run on the router. A bare OpenRouter/provider key also works but is a degraded loop. **Required.** |
 | `request_extra` | JSON merged into every request body. **Carries the model** (`{"model":"..."}`) — there is no dedicated `model` key. Against a router it also carries the routing `policy_ir`. Override wins on key collision. |
 | `compact_extra` | JSON enabling async compaction: `keep_recent` + a cheap summariser `policy_ir`. Unset → no compaction. |
 | `endpoint` | default OpenRouter; point at an unhardcoded router for routing/cache/compaction. |
@@ -83,10 +83,13 @@ Pointed at a bare provider the HTTP call still fires, but it's a **degraded** lo
 SubZeroClaw doesn't supervise itself — bring your init system. A systemd unit with
 `Restart=on-failure` and an `EnvironmentFile` (root-owned, `chmod 600`) holding
 `SUBZEROCLAW_API_KEY` gets you restart + credential isolation. The runtime
-**scrubs `SUBZEROCLAW_*` from its own environment** right after `config_load`, so
-the shell it hands the model never inherits the key (`cat /proc/self/environ`
-comes up empty). The supervisor owns the secret; the shell stays unguarded by
-design — the scrub only keeps the runtime's *own* key out of it.
+**scrubs the four provider secrets** (`SUBZEROCLAW_API_KEY`, `_ENDPOINT`,
+`_REQUEST_EXTRA`, `_COMPACT_EXTRA`) from its own environment right after
+`config_load` — wiping the value in place, then `unsetenv` — so the shell it hands
+the model never inherits the key (`cat /proc/self/environ` comes up empty).
+Non-secret vars like `SUBZEROCLAW_SKILLS` are deliberately kept (the genswarms
+wrapper sets it). The supervisor owns the secret; the shell stays unguarded by
+design — the scrub only keeps the runtime's *own* secrets out of it.
 
 ## Gotchas
 

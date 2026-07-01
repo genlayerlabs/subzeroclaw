@@ -39,7 +39,7 @@ api_key = "sk-or-your-openrouter-key"
 # The model is no longer a dedicated key — it rides in request_extra (the generic
 # body-override channel). Direct provider: set the model. Against an unhardcoded
 # router: send a policy instead — see "Routing & compaction via unhardcoded".
-request_extra = "{\"model\": \"minimax/minimax-m2.5\"}"
+request_extra = {"model": "minimax/minimax-m2.5"}
 EOF
 
 ./subzeroclaw "check disk usage and clean tmp if over 80%"
@@ -139,7 +139,7 @@ api_key = "sk-or-your-openrouter-key"
 # The model is no longer a dedicated key — it rides in request_extra (the generic
 # body-override channel). Direct provider: set the model. Against an unhardcoded
 # router: send a policy instead — see "Routing & compaction via unhardcoded".
-request_extra = "{\"model\": \"minimax/minimax-m2.5\"}"
+request_extra = {"model": "minimax/minimax-m2.5"}
 EOF
 ```
 
@@ -193,8 +193,10 @@ EnvironmentFile=/etc/subzeroclaw.env   # root-owned, chmod 600: SUBZEROCLAW_API_
 This also gets you credential isolation for free, and it is the recommended way
 to hold the key: run the agent as an unprivileged `User=`, and deliver the key
 through the environment from a root-owned `EnvironmentFile` the agent's user
-cannot read. SubZeroClaw scrubs `SUBZEROCLAW_*` from its own environment right
-after reading config (see `config_load`), so the shell it hands the model never
+cannot read. SubZeroClaw scrubs the provider secrets (`SUBZEROCLAW_API_KEY`,
+`_ENDPOINT`, `_REQUEST_EXTRA`, `_COMPACT_EXTRA`) from its own environment right
+after reading config (see `config_load`; non-secret vars like `SUBZEROCLAW_SKILLS`
+are kept), so the shell it hands the model never
 inherits the key — `echo $SUBZEROCLAW_API_KEY` and `cat /proc/self/environ` come
 up empty. The supervisor owns the secret; the agent only ever holds a copy in
 memory. (None of this constrains what the shell can *do* — that is still

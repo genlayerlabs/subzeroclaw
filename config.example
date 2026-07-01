@@ -3,21 +3,30 @@
 # These are exactly the keys the runtime parses (see config_parse_line in
 # src/subzeroclaw.c); anything else in this file is ignored.
 
-api_key = "sk-or-your-openrouter-key-here"
+# SubZeroClaw is designed to run on an unhardcoded router (routing with
+# prompt-cache affinity + async compaction). So the key is an unhardcoded
+# *consumer* key (llmr_…, minted in the router dashboard → Consumers), and
+# `endpoint` points at the router. A bare OpenRouter/provider key still works but
+# is a DEGRADED loop — no routing, no cache, no compaction (see the README).
+api_key  = "llmr_your-unhardcoded-consumer-key"
+endpoint = "https://YOUR-UNHARDCODED-ROUTER/v1/chat/completions"
 
 # The model is NOT a dedicated key — it rides in request_extra, the JSON merged
-# into every request body. Direct provider: set {"model": "..."}. Against an
-# unhardcoded router: send a routing policy instead, e.g.
-#   {"model":"policy:auto","policy_ir":[ ... ]}  (see the README).
-# On a key collision, this override wins.
-request_extra = "{\"model\": \"minimax/minimax-m2.5\"}"
+# into every request body. Give it as BARE JSON: no surrounding quotes and no
+# backslash-escaping. The parser strips at most one pair of outer quotes and does
+# NOT unescape, so a quoted "{\"model\":...}" reaches the JSON parser with literal
+# backslashes and is silently dropped.
+#
+# Against the router, send a routing policy (author it with the unhardcoded-use
+# skill); "policy:auto" tells the router to pick:
+request_extra = {"model":"policy:auto","policy_ir":["policy", "..."]}
+# Direct provider instead (degraded, no router): {"model": "minimax/minimax-m2.5"}
 
-# compact_extra enables async context sealing against an unhardcoded router's
-# /v1/compact: keep_recent (turns kept verbatim) + a cheap summariser policy.
-# Unset => no compaction (context grows until the provider refuses it).
-# compact_extra = "{\"keep_recent\": 8, \"policy_ir\": [ ... ]}"
+# compact_extra enables async context sealing at the router's /v1/compact:
+# keep_recent (turns kept verbatim) + a cheap summariser policy. Bare JSON, same
+# rule as request_extra. Unset => no compaction.
+# compact_extra = {"keep_recent": 8, "policy_ir": ["policy", "..."]}
 
-# endpoint   = "https://openrouter.ai/api/v1/chat/completions"
 # skills_dir = "~/.subzeroclaw/skills"
 # log_dir    = "~/.subzeroclaw/logs"
 # max_turns  = 200
