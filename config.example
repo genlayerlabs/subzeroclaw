@@ -1,9 +1,23 @@
 # SubZeroClaw configuration
-# Copy to ~/.subzeroclaw/config and edit
+# Copy to ~/.subzeroclaw/config and edit.
+# These are exactly the keys the runtime parses (see config_parse_line in
+# src/subzeroclaw.c); anything else in this file is ignored.
 
 api_key = "sk-or-your-openrouter-key-here"
-model = "minimax/minimax-m2.5"
-# endpoint = "https://openrouter.ai/api/v1/chat/completions"
+
+# The model is NOT a dedicated key — it rides in request_extra, the JSON merged
+# into every request body. Direct provider: set {"model": "..."}. Against an
+# unhardcoded router: send a routing policy instead, e.g.
+#   {"model":"policy:auto","policy_ir":[ ... ]}  (see the README).
+# On a key collision, this override wins.
+request_extra = "{\"model\": \"minimax/minimax-m2.5\"}"
+
+# compact_extra enables async context sealing against an unhardcoded router's
+# /v1/compact: keep_recent (turns kept verbatim) + a cheap summariser policy.
+# Unset => no compaction (context grows until the provider refuses it).
+# compact_extra = "{\"keep_recent\": 8, \"policy_ir\": [ ... ]}"
+
+# endpoint   = "https://openrouter.ai/api/v1/chat/completions"
 # skills_dir = "~/.subzeroclaw/skills"
-# max_turns = 50
-# request_extra = '{"temperature": 0.2}'  # optional JSON object merged into every request body
+# log_dir    = "~/.subzeroclaw/logs"
+# max_turns  = 200
