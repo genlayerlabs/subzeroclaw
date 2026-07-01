@@ -35,17 +35,25 @@ make                          # builds the 55KB binary in ~0.5s
 
 mkdir -p ~/.subzeroclaw/skills
 cat > ~/.subzeroclaw/config << 'EOF'
-api_key = "sk-or-your-openrouter-key"
-# The model is no longer a dedicated key — it rides in request_extra (the generic
-# body-override channel). Direct provider: set the model. Against an unhardcoded
-# router: send a policy instead — see "Routing & compaction via unhardcoded".
-request_extra = {"model": "minimax/minimax-m2.5"}
+# SubZeroClaw is designed to run on an unhardcoded router: a consumer key (llmr_,
+# minted in the router dashboard) and the router endpoint. The model is not a
+# dedicated key — it rides in request_extra as BARE JSON; "policy:auto" lets the
+# router pick (author the policy_ir with the unhardcoded-use skill).
+api_key  = "llmr_your-unhardcoded-consumer-key"
+endpoint = "https://YOUR-UNHARDCODED-ROUTER/v1/chat/completions"
+request_extra = {"model":"policy:auto","policy_ir":["policy", "..."]}
 EOF
 
 ./subzeroclaw "check disk usage and clean tmp if over 80%"
 ```
 
-Clone, build, drop in an [OpenRouter](https://openrouter.ai) key, run. No daemon to register, no service to start. You need `gcc` to build and `curl` at runtime — everything else is in the box.
+Clone, build, point it at your [unhardcoded](https://github.com/genlayerlabs/unhardcoded) router, run. No daemon to register, no service to start. You need `gcc` to build and `curl` at runtime — everything else is in the box.
+
+> **Degraded standalone mode.** You can instead point `endpoint` at a bare
+> provider with its own key (e.g. an [OpenRouter](https://openrouter.ai) `sk-or-…`
+> key and a direct `request_extra = {"model": "minimax/minimax-m2.5"}`). The loop
+> still runs, but with no routing, prompt-cache affinity, or compaction — context
+> grows until the provider refuses it. Not a supported standalone mode.
 
 ## Routing & compaction via unhardcoded
 
@@ -134,12 +142,15 @@ Requires `libcjson-dev` or uses vendored cJSON automatically.
 ```bash
 mkdir -p ~/.subzeroclaw/skills
 
-cat > ~/.subzeroclaw/config << EOF
-api_key = "sk-or-your-openrouter-key"
-# The model is no longer a dedicated key — it rides in request_extra (the generic
-# body-override channel). Direct provider: set the model. Against an unhardcoded
-# router: send a policy instead — see "Routing & compaction via unhardcoded".
-request_extra = {"model": "minimax/minimax-m2.5"}
+cat > ~/.subzeroclaw/config << 'EOF'
+# Against an unhardcoded router (the supported mode): consumer key + endpoint.
+api_key  = "llmr_your-unhardcoded-consumer-key"
+endpoint = "https://YOUR-UNHARDCODED-ROUTER/v1/chat/completions"
+# The model rides in request_extra as BARE JSON (no surrounding quotes, no
+# backslash-escaping — the parser strips one pair of quotes but does not unescape).
+# "policy:auto" lets the router pick; author the policy_ir with the unhardcoded-use
+# skill. Direct-provider fallback (degraded): {"model": "minimax/minimax-m2.5"}.
+request_extra = {"model":"policy:auto","policy_ir":["policy", "..."]}
 EOF
 ```
 
@@ -218,7 +229,7 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `api_key` | (required) | OpenRouter (or unhardcoded) API key |
+| `api_key` | (required) | The unhardcoded router consumer key (`llmr_…`); an OpenRouter/provider key works in the degraded standalone mode |
 | `request_extra` | (none) | the loop JSON merged into every request body — carries the `model`, and against an unhardcoded router the routing `policy_ir` |
 | `compact_extra` | (none) | the compaction JSON — `keep_recent` + the cheap summariser `policy_ir`; unset disables compaction |
 | `endpoint` | `https://openrouter.ai/api/v1/chat/completions` | API endpoint (point it at an unhardcoded router for routing/cache/compaction) |
