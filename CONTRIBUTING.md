@@ -18,7 +18,7 @@ Examples of bad PRs:
 - Compressing readable code into fewer lines at the expense of clarity
 - Adding configuration for something that works fine hardcoded
 
-The code is currently ~380 lines. Every line should justify its existence. If yours removes lines while keeping tests green, it's probably good.
+The runtime is currently ~550 lines of C (`src/subzeroclaw.c`). Every line should justify its existence. If yours removes lines while keeping tests green, it's probably good.
 
 ## 2. Prove a limitation of the anti-framework
 
@@ -49,4 +49,4 @@ This forces an honest conversation: does SubZeroClaw actually need to grow, or d
 make test
 ```
 
-All 16 tests must pass. If you change `subzeroclaw.c`, update `test.c` to match.
+All 31 tests must pass. If you change `subzeroclaw.c`, update `test.c` to match.
