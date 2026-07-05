@@ -123,11 +123,20 @@ static int write_temp(const char *prefix, const char *data, char *out, size_t ou
     return 0;
 }
 
-static char *http_post(const char *url, const char *api_key, const char *body) {
+static char *http_post(const char *url, const char *api_key, const char *session,
+                       const char *body) {
     char body_path[64], hdr_path[64];
     if (write_temp("body", body, body_path, sizeof(body_path)) < 0) return NULL;
-    char hdr[MAX_VALUE + 64];
-    snprintf(hdr, sizeof(hdr), "-H \"Authorization: Bearer %s\"", api_key);
+    char hdr[2 * MAX_VALUE + 128];
+    /* The unhardcoded router pins cache affinity AND meters per-session
+       (GET /v1/session/{sid}: calls/tokens/cost) by the HEADER — the body
+       "session" field alone is not honored by the deployed router. */
+    if (session && session[0])
+        snprintf(hdr, sizeof(hdr),
+                 "-H \"Authorization: Bearer %s\"\n-H \"X-Unhardcoded-Session: %s\"",
+                 api_key, session);
+    else
+        snprintf(hdr, sizeof(hdr), "-H \"Authorization: Bearer %s\"", api_key);
     if (write_temp("hdr", hdr, hdr_path, sizeof(hdr_path)) < 0) { unlink(body_path); return NULL; }
 
     char cmd[2048];
@@ -230,6 +239,7 @@ typedef struct {
     char *finish_reason, *text;
     cJSON *tool_calls, *msg;
     int compact;   /* router asked us to seal context (x_router.compact) */
+    char usage[192]; /* per-call meter line from usage + x_router (empty if absent) */
 } Response;
 
 static void response_free(Response *r) {
@@ -292,7 +302,7 @@ static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
 SZC_WEAK char *llm_chat(const Config *cfg, cJSON *msgs, cJSON *tools) {
     char *rj = build_request(cfg, msgs, tools);
     if (!rj) return NULL;
-    char *rb = http_post(cfg->endpoint, cfg->api_key, rj);
+    char *rb = http_post(cfg->endpoint, cfg->api_key, cfg->session, rj);
     free(rj);
     return rb;
 }
@@ -319,6 +329,24 @@ static int parse_response(const char *body, Response *out) {
     out->tool_calls = cJSON_GetObjectItem(out->msg, "tool_calls");
     cJSON *xr = cJSON_GetObjectItem(root, "x_router");
     out->compact = xr && cJSON_IsTrue(cJSON_GetObjectItem(xr, "compact"));
+    /* Per-call meter: the router reports tokens + cost in-band on every
+       response (usage + x_router.cost_usd). Logged per session so an
+       agent's spend is auditable locally, whatever the router deploy. */
+    {
+        cJSON *us = cJSON_GetObjectItem(root, "usage");
+        cJSON *pi = us ? cJSON_GetObjectItem(us, "prompt_tokens") : NULL;
+        cJSON *co = us ? cJSON_GetObjectItem(us, "completion_tokens") : NULL;
+        cJSON *fam = xr ? cJSON_GetObjectItem(xr, "model_family") : NULL;
+        cJSON *cost = xr ? cJSON_GetObjectItem(xr, "cost_usd") : NULL;
+        cJSON *cache = xr ? cJSON_GetObjectItem(xr, "tokens_cached") : NULL;
+        if (us && pi && co)
+            snprintf(out->usage, sizeof(out->usage),
+                     "model=%s in=%d out=%d cached=%d cost_usd=%.6f",
+                     fam && cJSON_IsString(fam) ? fam->valuestring : "?",
+                     (int)cJSON_GetNumberValue(pi), (int)cJSON_GetNumberValue(co),
+                     cache ? (int)cJSON_GetNumberValue(cache) : 0,
+                     cost ? cJSON_GetNumberValue(cost) : 0.0);
+    }
     cJSON_Delete(root);
     return 0;
 }
@@ -383,8 +411,15 @@ static int compact_fire(const Config *cfg, cJSON *msgs, char *res_path, size_t r
     char body_path[64], hdr_path[64];
     if (write_temp("cbody", body, body_path, sizeof(body_path)) < 0) { free(body); return -1; }
     free(body);
-    char hdr[MAX_VALUE + 64];
-    snprintf(hdr, sizeof(hdr), "-H \"Authorization: Bearer %s\"", cfg->api_key);
+    char hdr[2 * MAX_VALUE + 128];
+    /* same session header as the chat path: the seal call must meter (and
+       cache-pin) under the SAME sid as the conversation it seals */
+    if (cfg->session[0])
+        snprintf(hdr, sizeof(hdr),
+                 "-H \"Authorization: Bearer %s\"\n-H \"X-Unhardcoded-Session: %s\"",
+                 cfg->api_key, cfg->session);
+    else
+        snprintf(hdr, sizeof(hdr), "-H \"Authorization: Bearer %s\"", cfg->api_key);
     if (write_temp("chdr", hdr, hdr_path, sizeof(hdr_path)) < 0) { unlink(body_path); return -1; }
 
     char url[MAX_VALUE + 16]; compact_url(cfg, url, sizeof(url));
@@ -488,6 +523,7 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
         Response resp;
         if (parse_response(rb, &resp) != 0) { free(rb); return -1; }
         free(rb);
+        if (resp.usage[0]) log_write(log, "USAGE", resp.usage);
 
         /* Discard a tool-call round with no runnable command instead of recording it,
            so the model can't few-shot off its own malformed call and spiral (codex
