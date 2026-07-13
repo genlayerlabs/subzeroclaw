@@ -1,12 +1,12 @@
 # SubZeroClaw
 
-> A minimal agentic runtime written in C: ~550 lines of source, a 55KB binary, ~2MB RAM at runtime. One skill file + one LLM + one shell loop. No framework, no plugins, no adapters. Small enough to run anywhere — edge devices, Raspberry Pi, local automation, and large-scale agent swarms.
+> A minimal agentic runtime written in C: ~850 lines of source, a 55KB binary, ~2MB RAM at runtime. One skill file + one LLM + one shell loop. No framework, no plugins, no adapters. Small enough to run anywhere — edge devices, Raspberry Pi, local automation, and large-scale agent swarms.
 
-SubZeroClaw connects an LLM to a shell and loops: it reads a skill (a plain markdown file), calls the model, runs the one tool the model asks for (the shell), and repeats until the task is done. Because the only tool is the shell, any CLI you already have installed (git, curl, ffmpeg, jq, rsync, ...) is immediately available to the agent — there are no integrations to build. When context grows, the runtime does not summarize in-process: the unhardcoded router signals pressure (an `x_router.compact` flag) and the old turns are sealed asynchronously in the background (append-only), so the loop never pauses.
+SubZeroClaw connects an LLM to a shell and loops: it reads a skill (a plain markdown file), calls the model, runs the one tool the model asks for (the shell), and repeats until the task is done. Because the only tool is the shell, any CLI you already have installed (git, curl, ffmpeg, jq, rsync, ...) is immediately available to the agent — there are no integrations to build. When context grows, the unhardcoded router signals pressure (an `x_router.compact` flag), then the runtime synchronously replaces aged complete interaction groups with a router-produced summary between protocol rounds while keeping authority and the recent tail local.
 
 ## Facts
 
-- Language: C (~550 lines of runtime in a single file)
+- Language: C (~850 lines of runtime in a single file)
 - Binary size: 55 KB
 - RAM at runtime: ~2 MB
 - Dependencies: a shell with curl, and unhardcoded (the router substrate — model selection, prompt-cache affinity, context compaction; MIT). cJSON is vendored in-repo, not a dependency.

@@ -6,7 +6,7 @@
 
 > **WARNING: This software executes arbitrary shell commands with no safety checks, no confirmation prompts, no sandboxing, and no guardrails. The LLM decides what to run and the runtime runs it — `rm -rf /` included. There is nothing between the model's output and your system. If you don't understand what that means, do not use this. This is a bare agentic loop: execute the task, whatever it takes, nothing more, nothing less.**
 
-**~550 lines of C. 55KB binary. A skill-driven agentic daemon for edge hardware.**
+**~850 lines of C. ~55KB binary. A skill-driven agentic daemon for edge hardware.**
 
 ```
 skill.md + LLM + shell + loop = autonomous agent
@@ -21,10 +21,10 @@ You write a skill as a markdown file. You point SubZeroClaw at it. It calls an L
 ```
 ~/.subzeroclaw/skills/monitor.md    ← what the agent knows
 ~/.subzeroclaw/config               ← API key + request_extra (model / routing policy)
-~/.subzeroclaw/logs/<session>.txt   ← full I/O trace
+~/.subzeroclaw/logs/<session>.jsonl ← private framed session trace
 ```
 
-The agent reads the skill into its system prompt, receives input, and autonomously calls tools until the task is complete. When context grows, the router signals it and the agent seals the old turns **asynchronously** (append-only, in the background) — it never pauses to compact (see "Routing & compaction via unhardcoded").
+The agent reads the skill into its system prompt, receives input, and autonomously calls tools until the task is complete. When context grows, the router signals it and the agent seals old turns synchronously between complete protocol rounds (see "Routing & compaction via unhardcoded").
 
 ## Quickstart
 
@@ -69,13 +69,31 @@ SubZeroClaw points its `endpoint` at [**unhardcoded**](https://github.com/genlay
   per-run `session` id for that affinity), e.g.
   `{"model":"policy:auto","policy_ir":[ "policy", … cache_hot affinity … ]}`.
 - **Compaction** — when the router signals context pressure (an `x_router.compact`
-  flag on the response), SubZeroClaw fires an append-only seal at the router's
-  `/v1/compact` **in the background** and keeps taking turns; when the sealed block
-  lands it splices it in *ahead* of the turns that arrived meanwhile. Compaction is
-  asynchronous — no turn is ever blocked, the prompt-cache prefix is never
-  rewritten, and you never see a pause. The seal routing + how many recent turns to
-  keep verbatim ride in `SUBZEROCLAW_COMPACT_EXTRA` (the second JSON), e.g.
-  `{"keep_recent":8,"policy_ir":[ "policy", … cheap summariser … ]}`.
+  flag on the response), SubZeroClaw calls `/v1/compact` synchronously after the
+  completed assistant/tool round. It keeps authority and recent interaction groups
+  locally and sends only raw `previous_summary` memory plus newly aged complete groups.
+  The router returns raw summary text; SubZeroClaw creates the canonical boundary and
+  sealed summary locally, checks that the result is strictly smaller, and only then
+  replaces the aged context. The system/developer prompt, prior boundary, and recent
+  tail never enter the compaction request. Six recent complete interaction groups
+  stay local; the router owns the trigger, summarizer profile, and 512-token default.
+  There is no configurable summarizer model or routing policy in the runtime. Provider cache
+  reuse after the insertion point is not promised.
+
+  This runtime speaks the summary-only `/v1/compact` contract v3 and fails closed
+  on any other version or malformed result. Deploy a v3-compatible router before
+  this runtime. The
+  request, bearer header and result travel through anonymous pipes;
+  no credential, request or result filename is created in `/tmp`.
+
+  Logs separate two concerns: `COMPACT` contains a bounded status/reason or, for
+  an applied seal, before/after counts and byte sizes. The exact applied memory
+  is then written as a sensitive `COMPACT_SUMMARY` record in the same private
+  JSONL trace. The evidence is local and its retention follows the configured log
+  storage; it is not durable database history unless another system persists it. These adjacent
+  records are best-effort evidence: a process or disk failure can interrupt either
+  write. This makes the actual compacted context inspectable without adding a
+  database or exposing the summary to metadata-only consumers.
 
 This is SubZeroClaw being *more* itself: the loop, the shell, the skill — on a
 substrate that carries everything that was never "skill + LLM + shell + loop".
@@ -97,7 +115,7 @@ SubZeroClaw doesn't simplify their architecture. It ignores it and writes the lo
 |                   | SubZeroClaw  | ZeroClaw     | OpenClaw     |
 |-------------------|--------------|--------------|--------------|
 | Language          | C            | Rust         | TypeScript   |
-| Source            | ~550 lines        | ~15,000      | ~430,000     |
+| Source            | ~850 lines        | ~15,000      | ~430,000     |
 | Binary            | 55 KB             | 3.4 MB       | 80+ MB       |
 | RAM (runtime)     | ~2 MB             | < 5 MB       | 80-120 MB    |
 | Compiles on Pi    | 0.5s              | OOM          | slow         |
@@ -170,10 +188,8 @@ SUBZEROCLAW_ENDPOINT
 SUBZEROCLAW_REQUEST_EXTRA   # the LOOP JSON, merged into every request body. Carries the
                            #   model ({"model":"..."}); against an unhardcoded router it carries
                            #   the routing policy too ({"model":"policy:auto","policy_ir":[...]}).
-                           #   On a key collision the override wins.
-SUBZEROCLAW_COMPACT_EXTRA  # the COMPACTION JSON. When set, an x_router.compact signal triggers
-                           #   an async append-only seal at the router's /v1/compact; this carries
-                           #   keep_recent + the cheap summariser policy_ir. Unset -> no compaction.
+                           #   On a key collision the override wins, except runtime-owned
+                           #   messages, tools, and session, which cannot be replaced.
 ```
 
 ## Usage
@@ -205,7 +221,7 @@ This also gets you credential isolation for free, and it is the recommended way
 to hold the key: run the agent as an unprivileged `User=`, and deliver the key
 through the environment from a root-owned `EnvironmentFile` the agent's user
 cannot read. SubZeroClaw scrubs the provider secrets (`SUBZEROCLAW_API_KEY`,
-`_ENDPOINT`, `_REQUEST_EXTRA`, `_COMPACT_EXTRA`) from its own environment right
+`_ENDPOINT`, `_REQUEST_EXTRA`) from its own environment right
 after reading config (see `config_load`; non-secret vars like `SUBZEROCLAW_SKILLS`
 are kept), so the shell it hands the model never
 inherits the key — `echo $SUBZEROCLAW_API_KEY` and `cat /proc/self/environ` come
@@ -215,14 +231,18 @@ unguarded by design; it only keeps the runtime's own credential out of it.)
 
 ## Session logging
 
-Every session gets a random hex ID. All input, output, tool calls, and results are logged to `~/.subzeroclaw/logs/<session>.txt` with timestamps.
+Every session gets a random hex ID. Input, output, tool calls, results, and
+compaction evidence are written to one escaped JSON object per line. The log
+directory is forced to mode `0700` and the `.jsonl` file to `0600` because it
+contains sensitive conversation data.
 
 ```
-=== f850c58ddd4ae72a Sun Feb 16 16:30:01 2026
-[2026-02-16 16:30:01] USER: check disk usage
-[2026-02-16 16:30:03] TOOL: shell
-[2026-02-16 16:30:03] RES: /dev/sda1  72% /
-[2026-02-16 16:30:04] ASST: Disk usage is at 72%, below threshold.
+{"schema":"subzeroclaw.log.v2","sequence":1,"role":"USER","content":"check disk usage",...}
+{"schema":"subzeroclaw.log.v2","sequence":2,"role":"TOOL","content":"shell: df -h",...}
+{"schema":"subzeroclaw.log.v2","sequence":3,"role":"RES","content":"/dev/sda1 72% /",...}
+{"schema":"subzeroclaw.log.v2","sequence":4,"role":"ASST","content":"Disk usage is at 72%.",...}
+{"schema":"subzeroclaw.log.v2","sequence":5,"role":"COMPACT","content":"{...}",...}
+{"schema":"subzeroclaw.log.v2","sequence":6,"role":"COMPACT_SUMMARY","content":"[Earlier conversation summary...]",...}
 ```
 
 ## Config reference
@@ -231,7 +251,6 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 |-----|---------|-------------|
 | `api_key` | (required) | The unhardcoded router consumer key (`llmr_…`); an OpenRouter/provider key works in the degraded standalone mode |
 | `request_extra` | (none) | the loop JSON merged into every request body — carries the `model`, and against an unhardcoded router the routing `policy_ir` |
-| `compact_extra` | (none) | the compaction JSON — `keep_recent` + the cheap summariser `policy_ir`; unset disables compaction |
 | `endpoint` | `https://openrouter.ai/api/v1/chat/completions` | API endpoint (point it at an unhardcoded router for routing/cache/compaction) |
 | `skills_dir` | `~/.subzeroclaw/skills` | Path to skill markdown files |
 | `log_dir` | `~/.subzeroclaw/logs` | Session log directory |
@@ -250,7 +269,7 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 
 ```
 src/
-├── subzeroclaw.c   ~550 lines  The entire runtime
+├── subzeroclaw.c   ~850 lines  The entire runtime
 ├── test.c                      the test suite
 ├── cJSON.c                     Vendored JSON parser
 └── cJSON.h
@@ -266,7 +285,7 @@ Every layer of "framework" between the model and the shell is complexity that ad
 
 OpenClaw solved the agentic loop with 430,000 lines of TypeScript. ZeroClaw re-solved it with 15,000 lines of Rust. Both are good — but both carry the weight of problems that only exist at platform scale: multi-tenancy, channel routing, identity portability, plugin registries.
 
-SubZeroClaw asks: what if the problem is just "one agent, one skill, one device"? Then the answer is ~550 readable lines of C.
+SubZeroClaw asks: what if the problem is just "one agent, one skill, one device"? Then the answer still fits in one readable C file of about 850 lines.
 
 ## License
 

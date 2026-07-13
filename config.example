@@ -4,7 +4,7 @@
 # src/subzeroclaw.c); anything else in this file is ignored.
 
 # SubZeroClaw is designed to run on an unhardcoded router (routing with
-# prompt-cache affinity + async compaction). So the key is an unhardcoded
+# prompt-cache affinity + synchronous compaction). So the key is an unhardcoded
 # *consumer* key (llmr_…, minted in the router dashboard → Consumers), and
 # `endpoint` points at the router. A bare OpenRouter/provider key still works but
 # is a DEGRADED loop — no routing, no cache, no compaction (see the README).
@@ -21,11 +21,6 @@ endpoint = "https://YOUR-UNHARDCODED-ROUTER/v1/chat/completions"
 # skill); "policy:auto" tells the router to pick:
 request_extra = {"model":"policy:auto","policy_ir":["policy", "..."]}
 # Direct provider instead (degraded, no router): {"model": "minimax/minimax-m2.5"}
-
-# compact_extra enables async context sealing at the router's /v1/compact:
-# keep_recent (turns kept verbatim) + a cheap summariser policy. Bare JSON, same
-# rule as request_extra. Unset => no compaction.
-# compact_extra = {"keep_recent": 8, "policy_ir": ["policy", "..."]}
 
 # skills_dir = "~/.subzeroclaw/skills"
 # log_dir    = "~/.subzeroclaw/logs"
