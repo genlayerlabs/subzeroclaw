@@ -125,6 +125,10 @@ static void test_turn_newline_framed_tty(void) {
 
 static void test_turn_eof_empty_is_null(void) {
     TEST("read_turn: EOF with no bytes returns NULL");
+    /* fmemopen("", 0, "r") returns NULL on some platforms (e.g. macOS);
+     * read_turn(NULL) must return NULL without crashing, and on platforms
+     * where fmemopen succeeds with a zero-length buffer, the immediate EOF
+     * (no bytes read) must also yield NULL. */
     FILE *f = fmemopen("", 0, "r");
     char *r = read_turn(f, '\0');
     if (r == NULL) PASS();
@@ -316,6 +320,31 @@ static void test_recorded_round_pairs_every_call(void) {
 
     cJSON_Delete(tool_calls);
     cJSON_Delete(msgs);
+}
+
+/* ======== NULL-SAFETY / OOM REGRESSION TESTS ======== */
+
+/* read_turn(NULL, ...) must return NULL without dereferencing the stream
+ * pointer.  Several callers feed it a FILE* that may be NULL when an upstream
+ * open fails (e.g. fmemopen("", 0, "r") returns NULL on macOS), so the guard
+ * prevents a segfault that previously killed the whole test suite. */
+static void test_read_turn_null_stream(void) {
+    TEST("read_turn: NULL stream returns NULL");
+    char *r = read_turn(NULL, '\0');
+    if (r == NULL) PASS();
+    else { FAIL("expected NULL"); free(r); }
+}
+
+/* agent_build_system_prompt against a nonexistent dir still returns a valid
+ * (non-NULL) prompt — the malloc at the top is now NULL-checked, so an OOM
+ * there yields NULL and the caller in main() already handles that.  Here we
+ * just confirm the happy path returns a usable prompt. */
+static void test_system_prompt_null_on_oom_path(void) {
+    TEST("agent_build_system_prompt: missing dir -> non-NULL prompt");
+    char *p = agent_build_system_prompt("/nonexistent_dir_xyz");
+    if (p && strstr(p, "SubZeroClaw")) PASS();
+    else FAIL(p ? "missing base prompt" : "(null)");
+    free(p);
 }
 
 /* ======== SYSTEM PROMPT / SKILLS TEST ======== */
@@ -543,6 +572,7 @@ int main(void) {
     test_turn_content_verbatim();
     test_turn_newline_framed_tty();
     test_turn_eof_empty_is_null();
+    test_read_turn_null_stream();
     test_tools_definitions();
     test_parse_stop_response();
     test_parse_tool_calls_response();
@@ -558,6 +588,7 @@ int main(void) {
     test_round_has_command();
     test_recorded_round_pairs_every_call();
     test_system_prompt();
+    test_system_prompt_null_on_oom_path();
     test_skills_loading();
     test_config_no_key();
     test_config_defaults();

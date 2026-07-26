@@ -179,6 +179,7 @@ char *tool_execute(const char *name, const char *args_json) {
        The "; }" form breaks both. */
     size_t len = strlen(cmd);
     char *full = malloc(len + 16);
+    if (!full) { if (args) cJSON_Delete(args); return strdup("[exit:-1] error: out of memory"); }
     memcpy(full, "{\n", 2); memcpy(full + 2, cmd, len);
     memcpy(full + 2 + len, "\n} 2>&1", 8);
     if (args) cJSON_Delete(args);
@@ -186,6 +187,7 @@ char *tool_execute(const char *name, const char *args_json) {
     if (!fp) return strdup("[exit:-1] error: popen failed");
     /* Reserve 16 bytes at the head for the "[exit:N] " prefix */
     char *out = malloc(MAX_OUTPUT + 16);
+    if (!out) return strdup("[exit:-1] error: out of memory");
     size_t total = 16, n;
     /* Bound each read by the space left in `out` (cap = MAX_OUTPUT+16, with
        out[total] reserved for the trailing NUL). The previous loop kept the
@@ -211,6 +213,7 @@ char *tool_execute(const char *name, const char *args_json) {
 char *agent_build_system_prompt(const char *skills_dir) {
     size_t cap = 8192;
     char *prompt = malloc(cap);
+    if (!prompt) return NULL;
     size_t len = snprintf(prompt, cap,
         "You are SubZeroClaw, a minimal agentic assistant.\n"
         "You have one tool: shell. Use it to run any command.\n"
@@ -223,10 +226,17 @@ char *agent_build_system_prompt(const char *skills_dir) {
         char fp[MAX_PATH]; snprintf(fp, MAX_PATH, "%s/%s", skills_dir, entry->d_name);
         FILE *sf = fopen(fp, "r"); if (!sf) continue;
         fseek(sf, 0, SEEK_END); long sz = ftell(sf); fseek(sf, 0, SEEK_SET);
+        if (sz < 0) { fclose(sf); continue; }
         char *content = malloc(sz + 1);
+        if (!content) { fclose(sf); continue; }
         content[fread(content, 1, sz, sf)] = '\0'; fclose(sf);
         size_t clen = strlen(content);
-        while (len + clen + 128 >= cap) { cap *= 2; prompt = realloc(prompt, cap); }
+        while (len + clen + 128 >= cap) {
+            cap *= 2;
+            char *np = realloc(prompt, cap);
+            if (!np) { free(content); free(prompt); closedir(d); return NULL; }
+            prompt = np;
+        }
         len += snprintf(prompt + len, cap - len, "\n--- SKILL: %s ---\n", entry->d_name);
         memcpy(prompt + len, content, clen); len += clen; prompt[len] = '\0';
         free(content);
@@ -445,8 +455,10 @@ static void compact_splice(cJSON *msgs, int snapshot_len, const char *res_path, 
     cJSON *sp = root ? cJSON_GetObjectItem(root, "messages") : NULL;
     if (sp && cJSON_IsArray(sp) && cJSON_GetArraySize(msgs) >= snapshot_len) {
         for (int i = 0; i < snapshot_len; i++) cJSON_DeleteItemFromArray(msgs, 0);
-        for (int i = cJSON_GetArraySize(sp) - 1; i >= 0; i--)
-            cJSON_InsertItemInArray(msgs, 0, cJSON_Duplicate(cJSON_GetArrayItem(sp, i), 1));
+        for (int i = cJSON_GetArraySize(sp) - 1; i >= 0; i--) {
+            cJSON *dup = cJSON_Duplicate(cJSON_GetArrayItem(sp, i), 1);
+            if (dup) cJSON_InsertItemInArray(msgs, 0, dup);
+        }
         log_write(log, "SYS", "context compacted (append-only, async)");
     }
     if (root) cJSON_Delete(root);
@@ -575,6 +587,7 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
    survives verbatim as a single turn instead of fanning out into one turn (and
    one LLM call) per line. No escaping, no reinterpretation of backslashes. */
 static char *read_turn(FILE *f, int delim) {
+    if (!f) return NULL;
     size_t cap = 65536, len = 0;
     char *buf = malloc(cap);
     if (!buf) return NULL;
