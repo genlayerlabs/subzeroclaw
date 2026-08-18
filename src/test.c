@@ -207,6 +207,35 @@ static void test_parse_tool_calls_response(void) {
     response_free(&resp);
 }
 
+static void test_parse_tool_use_response(void) {
+    TEST("parse_response: tool_use alias");
+    const char *mock = "{"
+        "\"choices\": [{"
+        "  \"finish_reason\": \"tool_use\","
+        "  \"message\": {"
+        "    \"role\": \"assistant\","
+        "    \"content\": null,"
+        "    \"tool_calls\": [{"
+        "      \"id\": \"call_alias\","
+        "      \"type\": \"function\","
+        "      \"function\": {"
+        "        \"name\": \"shell\","
+        "        \"arguments\": \"{\\\"command\\\": \\\"echo alias\\\"}\""
+        "      }"
+        "    }]"
+        "  }"
+        "}]"
+        "}";
+    Response resp;
+    int rc = parse_response(mock, &resp);
+    int ok = (rc == 0 &&
+        strcmp(resp.finish_reason, "tool_use") == 0 &&
+        response_has_tool_calls(&resp));
+    if (ok) PASS();
+    else FAIL("tool_use alias was not recognized as a tool-call turn");
+    response_free(&resp);
+}
+
 static void test_parse_error_response(void) {
     TEST("parse_response: API error");
     const char *mock = "{\"error\": {\"message\": \"rate limited\"}}";
@@ -546,6 +575,7 @@ int main(void) {
     test_tools_definitions();
     test_parse_stop_response();
     test_parse_tool_calls_response();
+    test_parse_tool_use_response();
     test_parse_error_response();
     test_parse_garbage();
     test_build_request();
