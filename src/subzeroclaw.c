@@ -247,6 +247,14 @@ static void response_free(Response *r) {
     if (r->msg) cJSON_Delete(r->msg);
 }
 
+/* Providers do not agree on the finish-reason spelling for a structured tool
+   turn (for example, OpenAI-compatible routers may emit "tool_calls" or
+   "tool_use"). The structured message is authoritative. */
+static int response_has_tool_calls(const Response *r) {
+    return r && r->tool_calls && cJSON_IsArray(r->tool_calls) &&
+           cJSON_GetArraySize(r->tool_calls) > 0;
+}
+
 /* references avoid copying the full message array */
 static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
     cJSON *req = cJSON_CreateObject();
@@ -524,6 +532,7 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
         if (parse_response(rb, &resp) != 0) { free(rb); return -1; }
         free(rb);
         if (resp.usage[0]) log_write(log, "USAGE", resp.usage);
+        int has_tool_calls = response_has_tool_calls(&resp);
 
         /* Discard a tool-call round with no runnable command instead of recording it,
            so the model can't few-shot off its own malformed call and spiral (codex
@@ -535,8 +544,7 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
            MIXED round (at least one call carries a command) is recorded instead,
            and process_tool_calls then pairs every id with a `tool` reply, the empty
            calls included (asserted by test_recorded_round_pairs_every_call). */
-        if (!strcmp(resp.finish_reason, "tool_calls") && resp.tool_calls &&
-            !round_has_command(resp.tool_calls)) {
+        if (has_tool_calls && !round_has_command(resp.tool_calls)) {
             response_free(&resp);   /* discard: the empty call never enters history */
             continue;
         }
@@ -550,13 +558,15 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
                 compacting = 1;
         }
 
+        /* Execute the structured call regardless of provider-specific
+           finish_reason aliases. It must take precedence over terminal reasons. */
+        if (has_tool_calls) {
+            process_tool_calls(resp.tool_calls, msgs, log);
+            response_free(&resp); continue;
+        }
         if (!strcmp(resp.finish_reason, "stop")) {
             if (resp.text) { printf("%s\n", resp.text); log_write(log, "ASST", resp.text); }
             response_free(&resp); return 0;   /* msg already transferred; frees finish_reason */
-        }
-        if (!strcmp(resp.finish_reason, "tool_calls") && resp.tool_calls) {
-            process_tool_calls(resp.tool_calls, msgs, log);
-            response_free(&resp); continue;
         }
         if (resp.text) { printf("%s\n", resp.text); log_write(log, "ASST", resp.text); }
         response_free(&resp); return 0;
