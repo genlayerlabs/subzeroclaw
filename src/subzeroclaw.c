@@ -7,6 +7,9 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <signal.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <dirent.h>
 #include <cjson/cJSON.h>
 
@@ -114,40 +117,57 @@ static void log_write(FILE *log, const char *role, const char *content) {
     fprintf(log, "[%s] %s: %s\n", ts, role, content); fflush(log);
 }
 
-static int write_temp(const char *prefix, const char *data, char *out, size_t out_size) {
-    snprintf(out, out_size, "/tmp/.szc_%s_XXXXXX", prefix);
-    int fd = mkstemp(out); if (fd < 0) return -1;
-    FILE *f = fdopen(fd, "w");
-    if (!f) { close(fd); unlink(out); return -1; }
-    fputs(data, f); fclose(f);
-    return 0;
-}
-
 static char *http_post(const char *url, const char *api_key, const char *session,
-                       const char *body) {
-    char body_path[64], hdr_path[64];
-    if (write_temp("body", body, body_path, sizeof(body_path)) < 0) return NULL;
+                       const char *body, const char *work_dir) {
+    /* A compaction's parent owns its directory and can clean it on cancellation.
+       Ordinary requests own their own private directory. No config enters a shell. */
+    char own_dir[] = "/tmp/.szc_http_XXXXXX";
+    if (strpbrk(api_key, "\r\n") || (session && strpbrk(session, "\r\n"))) return NULL;
+    if (!work_dir) { if (!mkdtemp(own_dir)) return NULL; work_dir = own_dir; }
+    char body_path[128], hdr_path[128], body_arg[130], hdr_arg[130];
+    snprintf(body_path, sizeof(body_path), "%s/body", work_dir);
+    snprintf(hdr_path, sizeof(hdr_path), "%s/headers", work_dir);
+    char *buf = NULL;
     char hdr[2 * MAX_VALUE + 128];
     /* The unhardcoded router pins cache affinity AND meters per-session
        (GET /v1/session/{sid}: calls/tokens/cost) by the HEADER — the body
        "session" field alone is not honored by the deployed router. */
     if (session && session[0])
         snprintf(hdr, sizeof(hdr),
-                 "-H \"Authorization: Bearer %s\"\n-H \"X-Unhardcoded-Session: %s\"",
+                 "Authorization: Bearer %s\nX-Unhardcoded-Session: %s\n",
                  api_key, session);
     else
-        snprintf(hdr, sizeof(hdr), "-H \"Authorization: Bearer %s\"", api_key);
-    if (write_temp("hdr", hdr, hdr_path, sizeof(hdr_path)) < 0) { unlink(body_path); return NULL; }
-
-    char cmd[2048];
-    snprintf(cmd, sizeof(cmd),
-        "curl -s -m 120 -K '%s' -H 'Content-Type: application/json' -d @'%s' '%s' 2>&1",
-        hdr_path, body_path, url);
-    FILE *fp = popen(cmd, "r");
-    if (!fp) { unlink(body_path); unlink(hdr_path); return NULL; }
+        snprintf(hdr, sizeof(hdr), "Authorization: Bearer %s\n", api_key);
+    const char *paths[] = {body_path, hdr_path}, *data[] = {body, hdr};
+    for (int i = 0; i < 2; i++) {
+        int fd = open(paths[i], O_WRONLY | O_CREAT | O_EXCL, 0600);
+        if (fd < 0) goto cleanup;
+        FILE *f = fdopen(fd, "w");
+        if (!f) { close(fd); goto cleanup; }
+        int ok = fputs(data[i], f) >= 0;
+        if (fclose(f)) ok = 0;
+        if (!ok) goto cleanup;
+    }
+    snprintf(body_arg, sizeof(body_arg), "@%s", body_path);
+    snprintf(hdr_arg, sizeof(hdr_arg), "@%s", hdr_path);
+    int output[2];
+    if (pipe(output)) goto cleanup;
+    fflush(NULL);
+    pid_t pid = fork();
+    if (pid == 0) {
+        close(output[0]); dup2(output[1], STDOUT_FILENO); close(output[1]);
+        execlp("curl", "curl", "--silent", "--fail", "--max-time", "120",
+               "--header", hdr_arg, "--header", "Content-Type: application/json",
+               "--data-binary", body_arg, "--url", url, (char *)NULL);
+        _exit(127);
+    }
+    close(output[1]);
+    if (pid < 0) { close(output[0]); goto cleanup; }
+    FILE *fp = fdopen(output[0], "r");
+    if (!fp) { close(output[0]); kill(pid, SIGTERM); }
 
     size_t cap = 65536, len = 0, n;
-    char *buf = malloc(cap);
+    if (fp) buf = malloc(cap);
     while (buf && (n = fread(buf + len, 1, cap - len - 1, fp)) > 0) {
         len += n;
         if (len + 1 >= cap) {
@@ -158,7 +178,14 @@ static char *http_post(const char *url, const char *api_key, const char *session
         }
     }
     if (buf) buf[len] = '\0';
-    pclose(fp); unlink(body_path); unlink(hdr_path);
+    if (fp) fclose(fp);
+    int status = 0;
+    pid_t waited;
+    do { waited = waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
+    if (waited < 0 || !WIFEXITED(status) || WEXITSTATUS(status)) { free(buf); buf = NULL; }
+cleanup:
+    unlink(body_path); unlink(hdr_path);
+    if (work_dir == own_dir) rmdir(own_dir);
     return buf;
 }
 
@@ -247,12 +274,8 @@ static void response_free(Response *r) {
     if (r->msg) cJSON_Delete(r->msg);
 }
 
-/* Providers do not agree on the finish-reason spelling for a structured tool
-   turn (for example, OpenAI-compatible routers may emit "tool_calls" or
-   "tool_use"). The structured message is authoritative. */
 static int response_has_tool_calls(const Response *r) {
-    return r && r->tool_calls && cJSON_IsArray(r->tool_calls) &&
-           cJSON_GetArraySize(r->tool_calls) > 0;
+    return r && cJSON_IsArray(r->tool_calls) && cJSON_GetArraySize(r->tool_calls) > 0;
 }
 
 /* references avoid copying the full message array */
@@ -294,8 +317,8 @@ static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
         cJSON_AddItemReferenceToObject(req, "tools", tools); tools_ref = 1;
     }
     char *json = cJSON_PrintUnformatted(req);
-    if (msgs_ref)  cJSON_DetachItemFromObject(req, "messages");
-    if (tools_ref) cJSON_DetachItemFromObject(req, "tools");
+    if (msgs_ref)  cJSON_Delete(cJSON_DetachItemFromObject(req, "messages"));
+    if (tools_ref) cJSON_Delete(cJSON_DetachItemFromObject(req, "tools"));
     cJSON_Delete(req);
     return json;
 }
@@ -310,7 +333,7 @@ static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
 SZC_WEAK char *llm_chat(const Config *cfg, cJSON *msgs, cJSON *tools) {
     char *rj = build_request(cfg, msgs, tools);
     if (!rj) return NULL;
-    char *rb = http_post(cfg->endpoint, cfg->api_key, cfg->session, rj);
+    char *rb = http_post(cfg->endpoint, cfg->api_key, cfg->session, rj, NULL);
     free(rj);
     return rb;
 }
@@ -393,11 +416,28 @@ static void compact_url(const Config *cfg, char *out, size_t sz) {
     else   snprintf(out, sz, "%s/compact", e);
 }
 
-/* Fire an append-only seal of the current `msgs` in the BACKGROUND: POST to the
-   router's /v1/compact, atomically writing the spliced array to `res_path`. The
-   seal routing + keep_recent ride in SUBZEROCLAW_COMPACT_EXTRA. Returns 0 if
-   launched; the agent keeps looping and picks up the result on a later turn. */
-static int compact_fire(const Config *cfg, cJSON *msgs, char *res_path, size_t res_sz) {
+/* One pending seal belongs to the session, not to an individual user turn.
+   The parent reads its private result only after reaping the child, so no
+   shell background job, rename protocol, or separate HTTP path is needed. */
+typedef struct {
+    pid_t pid;
+    int snapshot_len;
+    char dir[80], result_path[96];
+} Compaction;
+
+static void compact_clear(Compaction *pending) {
+    if (pending->result_path[0]) unlink(pending->result_path);
+    if (pending->dir[0]) {
+        char path[128];
+        snprintf(path, sizeof(path), "%s/body", pending->dir); unlink(path);
+        snprintf(path, sizeof(path), "%s/headers", pending->dir); unlink(path);
+        rmdir(pending->dir);
+    }
+    memset(pending, 0, sizeof(*pending));
+}
+
+static int compact_fire(const Config *cfg, cJSON *msgs, Compaction *pending) {
+    if (pending->pid) return -1;
     cJSON *req = cJSON_CreateObject();
     if (cfg->compact_extra[0]) {            /* keep_recent / policy_ir / max_tokens */
         cJSON *extra = cJSON_Parse(cfg->compact_extra);
@@ -412,34 +452,31 @@ static int compact_fire(const Config *cfg, cJSON *msgs, char *res_path, size_t r
     }
     cJSON_AddItemReferenceToObject(req, "messages", msgs);
     char *body = cJSON_PrintUnformatted(req);
-    cJSON_DetachItemFromObject(req, "messages");
+    cJSON_Delete(cJSON_DetachItemFromObject(req, "messages"));
     cJSON_Delete(req);
     if (!body) return -1;
 
-    char body_path[64], hdr_path[64];
-    if (write_temp("cbody", body, body_path, sizeof(body_path)) < 0) { free(body); return -1; }
+    snprintf(pending->dir, sizeof(pending->dir), "/tmp/.szc_compact_XXXXXX");
+    if (!mkdtemp(pending->dir)) { free(body); compact_clear(pending); return -1; }
+    snprintf(pending->result_path, sizeof(pending->result_path), "%s/result", pending->dir);
+    pending->snapshot_len = cJSON_GetArraySize(msgs);
+    fflush(NULL);
+    pid_t pid = fork();
+    if (pid == 0) {
+        setpgid(0, 0);
+        char url[MAX_VALUE + 16]; compact_url(cfg, url, sizeof(url));
+        char *reply = http_post(url, cfg->api_key, cfg->session, body, pending->dir);
+        FILE *f = reply ? fopen(pending->result_path, "w") : NULL;
+        int ok = 0;
+        if (f) { ok = fputs(reply, f) >= 0; if (fclose(f)) ok = 0; }
+        free(reply); free(body);
+        _exit(ok ? 0 : 1);
+    }
     free(body);
-    char hdr[2 * MAX_VALUE + 128];
-    /* same session header as the chat path: the seal call must meter (and
-       cache-pin) under the SAME sid as the conversation it seals */
-    if (cfg->session[0])
-        snprintf(hdr, sizeof(hdr),
-                 "-H \"Authorization: Bearer %s\"\n-H \"X-Unhardcoded-Session: %s\"",
-                 cfg->api_key, cfg->session);
-    else
-        snprintf(hdr, sizeof(hdr), "-H \"Authorization: Bearer %s\"", cfg->api_key);
-    if (write_temp("chdr", hdr, hdr_path, sizeof(hdr_path)) < 0) { unlink(body_path); return -1; }
-
-    char url[MAX_VALUE + 16]; compact_url(cfg, url, sizeof(url));
-    snprintf(res_path, res_sz, "/tmp/.szc_cres_%d", (int)getpid());
-    /* atomic: write .tmp then rename, so res_path appears only when complete; the
-       subshell cleans its own temp files and detaches (&) so this returns at once. */
-    char cmd[2048 + MAX_VALUE];
-    snprintf(cmd, sizeof(cmd),
-        "( curl -s -m 120 -K '%s' -H 'Content-Type: application/json' -d @'%s' '%s' "
-        "-o '%s.tmp' && mv '%s.tmp' '%s' ; rm -f '%s' '%s' ) >/dev/null 2>&1 &",
-        hdr_path, body_path, url, res_path, res_path, res_path, body_path, hdr_path);
-    return system(cmd) == 0 ? 0 : -1;
+    if (pid < 0) { compact_clear(pending); return -1; }
+    setpgid(pid, pid);
+    pending->pid = pid;
+    return 0;
 }
 
 /* A background seal finished: replace the `snapshot_len` compacted messages with
@@ -451,13 +488,34 @@ static void compact_splice(cJSON *msgs, int snapshot_len, const char *res_path, 
     if (!buf) return;
     cJSON *root = cJSON_Parse(buf); free(buf);
     cJSON *sp = root ? cJSON_GetObjectItem(root, "messages") : NULL;
-    if (sp && cJSON_IsArray(sp) && cJSON_GetArraySize(msgs) >= snapshot_len) {
+    if (sp && cJSON_IsArray(sp) && cJSON_GetArraySize(sp) > 0 &&
+        cJSON_GetArraySize(msgs) >= snapshot_len) {
         for (int i = 0; i < snapshot_len; i++) cJSON_DeleteItemFromArray(msgs, 0);
         for (int i = cJSON_GetArraySize(sp) - 1; i >= 0; i--)
             cJSON_InsertItemInArray(msgs, 0, cJSON_Duplicate(cJSON_GetArrayItem(sp, i), 1));
         log_write(log, "SYS", "context compacted (append-only, async)");
-    }
+    } else log_write(log, "SYS", "invalid compaction response; history retained");
     if (root) cJSON_Delete(root);
+}
+
+static void compact_poll(Compaction *pending, cJSON *msgs, FILE *log) {
+    if (!pending->pid) return;
+    int status;
+    pid_t done = waitpid(pending->pid, &status, WNOHANG);
+    if (!done || (done < 0 && errno == EINTR)) return;
+    if (done > 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        compact_splice(msgs, pending->snapshot_len, pending->result_path, log);
+    else
+        log_write(log, "SYS", "context compaction failed; history retained");
+    compact_clear(pending);
+}
+
+static void compact_stop(Compaction *pending) {
+    if (pending->pid) {
+        kill(-pending->pid, SIGTERM);
+        while (waitpid(pending->pid, NULL, 0) < 0 && errno == EINTR) {}
+    }
+    compact_clear(pending);
 }
 
 static void process_tool_calls(cJSON *tool_calls, cJSON *msgs, FILE *log) {
@@ -511,20 +569,15 @@ static int round_has_command(cJSON *tool_calls) {
 }
 
 static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
-                     const char *input, FILE *log)
+                     const char *input, FILE *log, Compaction *pending)
 {
     cJSON_AddItemToArray(msgs, make_msg("user", input));
     log_write(log, "USER", input);
 
-    int compacting = 0, snapshot_len = 0;
-    char compact_res[80] = {0};
     for (int turn = 1; turn <= cfg->max_turns; turn++) {
         /* a background seal finished while we kept working? splice it in now —
            append-only, so it never collides with the turns added meanwhile. */
-        if (compacting && access(compact_res, F_OK) == 0) {
-            compact_splice(msgs, snapshot_len, compact_res, log);
-            compacting = 0;
-        }
+        compact_poll(pending, msgs, log);
         fprintf(stderr, "[%d] ...\n", turn);
         char *rb = llm_chat(cfg, msgs, tools);
         if (!rb) return -1;
@@ -551,22 +604,14 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
 
         cJSON_AddItemToArray(msgs, resp.msg); resp.msg = NULL;
 
-        /* router signalled context pressure: seal in the background and keep going */
-        if (resp.compact && !compacting && cfg->compact_extra[0]) {
-            snapshot_len = cJSON_GetArraySize(msgs);
-            if (compact_fire(cfg, msgs, compact_res, sizeof(compact_res)) == 0)
-                compacting = 1;
-        }
+        /* Complete tool-call pairs before taking a compaction snapshot. */
+        if (has_tool_calls) process_tool_calls(resp.tool_calls, msgs, log);
 
-        /* Execute the structured call regardless of provider-specific
-           finish_reason aliases. It must take precedence over terminal reasons. */
+        if (resp.compact && !pending->pid && cfg->compact_extra[0])
+            compact_fire(cfg, msgs, pending);
+
         if (has_tool_calls) {
-            process_tool_calls(resp.tool_calls, msgs, log);
             response_free(&resp); continue;
-        }
-        if (!strcmp(resp.finish_reason, "stop")) {
-            if (resp.text) { printf("%s\n", resp.text); log_write(log, "ASST", resp.text); }
-            response_free(&resp); return 0;   /* msg already transferred; frees finish_reason */
         }
         if (resp.text) { printf("%s\n", resp.text); log_write(log, "ASST", resp.text); }
         response_free(&resp); return 0;
@@ -632,6 +677,7 @@ int main(int argc, char **argv) {
     cJSON *msgs = cJSON_CreateArray();
     cJSON_AddItemToArray(msgs, make_msg("system", sysprompt));
     cJSON *tools = cJSON_Parse(TOOLS_JSON);
+    Compaction pending = {0};
     int rc = 0;
     fprintf(stderr, "subzeroclaw · %s\n", sid);
 
@@ -643,7 +689,7 @@ int main(int argc, char **argv) {
             memcpy(p, argv[i], l); p += l;
         }
         *p = '\0';
-        rc = agent_run(&cfg, msgs, tools, input, log);
+        rc = agent_run(&cfg, msgs, tools, input, log, &pending);
     } else {
         /* A human at a tty ends a turn with Enter ('\n'); a driving program
            (pipe/FIFO) ends each turn with a NUL byte, letting one turn carry
@@ -657,12 +703,13 @@ int main(int argc, char **argv) {
             if (!strcmp(input, "/quit") || !strcmp(input, "/exit")) {
                 free(input); break;
             }
-            agent_run(&cfg, msgs, tools, input, log);
+            agent_run(&cfg, msgs, tools, input, log, &pending);
             free(input);
             printf("\n<<TURN_COMPLETE>>\n");
             fflush(stdout);
         }
     }
+    compact_stop(&pending);
     cJSON_Delete(msgs); cJSON_Delete(tools); free(sysprompt);
     if (log) fclose(log);
     return rc;
