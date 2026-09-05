@@ -21,6 +21,10 @@ test: src/test.c src/subzeroclaw.c $(VENDOR)
 	$(CC) $(CFLAGS) -o test_subzeroclaw src/test.c $(VENDOR) $(LDFLAGS)
 	./test_subzeroclaw
 
+# Real executable, loopback-only provider; no credentials or model spend.
+test-integration: $(TARGET)
+	python3 -m unittest discover -s test -p 'test_*.py' -v
+
 clean:
 	rm -f $(TARGET) test_subzeroclaw
 
@@ -28,4 +32,4 @@ install: $(TARGET)
 	mkdir -p $(HOME)/.local/bin
 	cp $(TARGET) $(HOME)/.local/bin/
 
-.PHONY: clean install test
+.PHONY: clean install test test-integration

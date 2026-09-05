@@ -6,7 +6,7 @@
 
 > **WARNING: This software executes arbitrary shell commands with no safety checks, no confirmation prompts, no sandboxing, and no guardrails. The LLM decides what to run and the runtime runs it — `rm -rf /` included. There is nothing between the model's output and your system. If you don't understand what that means, do not use this. This is a bare agentic loop: execute the task, whatever it takes, nothing more, nothing less.**
 
-**~550 lines of C. 55KB binary. A skill-driven agentic daemon for edge hardware.**
+**A single-file C runtime for skill-driven agents.**
 
 ```
 skill.md + LLM + shell + loop = autonomous agent
@@ -72,8 +72,11 @@ SubZeroClaw points its `endpoint` at [**unhardcoded**](https://github.com/genlay
   flag on the response), SubZeroClaw fires an append-only seal at the router's
   `/v1/compact` **in the background** and keeps taking turns; when the sealed block
   lands it splices it in *ahead* of the turns that arrived meanwhile. Compaction is
-  asynchronous — no turn is ever blocked, the prompt-cache prefix is never
-  rewritten, and you never see a pause. The seal routing + how many recent turns to
+  asynchronous: at most one seal is pending per session, including across user
+  turns. Snapshots include complete tool-call/result pairs. Failed requests or
+  empty responses retain history and permit a later retry. Normal EOF cancels
+  pending work and removes its private temporary files; abrupt process kills do
+  not guarantee cleanup. The seal routing + how many recent turns to
   keep verbatim ride in `SUBZEROCLAW_COMPACT_EXTRA` (the second JSON), e.g.
   `{"keep_recent":8,"policy_ir":[ "policy", … cheap summariser … ]}`.
 
@@ -130,8 +133,9 @@ The skills included in this repo (`skills/`) are just examples to show the forma
 ## Build
 
 ```bash
-make            # builds subzeroclaw (55KB)
-make test       # runs the test suite
+make            # builds subzeroclaw
+make test       # unit tests
+make test-integration  # executable + loopback provider; requires Python 3, no live LLM
 make install    # copies to ~/.local/bin/
 ```
 
@@ -250,7 +254,7 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 
 ```
 src/
-├── subzeroclaw.c   ~550 lines  The entire runtime
+├── subzeroclaw.c              The entire runtime
 ├── test.c                      the test suite
 ├── cJSON.c                     Vendored JSON parser
 └── cJSON.h
@@ -266,7 +270,7 @@ Every layer of "framework" between the model and the shell is complexity that ad
 
 OpenClaw solved the agentic loop with 430,000 lines of TypeScript. ZeroClaw re-solved it with 15,000 lines of Rust. Both are good — but both carry the weight of problems that only exist at platform scale: multi-tenancy, channel routing, identity portability, plugin registries.
 
-SubZeroClaw asks: what if the problem is just "one agent, one skill, one device"? Then the answer is ~550 readable lines of C.
+SubZeroClaw asks: what if the problem is just "one agent, one skill, one device"?
 
 ## License
 

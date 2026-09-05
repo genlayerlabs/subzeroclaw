@@ -2,6 +2,14 @@
 #include "subzeroclaw.c"
 #include <assert.h>
 
+static int write_temp(const char *prefix, const char *data, char *out, size_t out_size) {
+    snprintf(out, out_size, "/tmp/.szc_%s_XXXXXX", prefix);
+    int fd = mkstemp(out); assert(fd >= 0);
+    FILE *f = fdopen(fd, "w"); assert(f);
+    assert(fputs(data, f) >= 0); assert(fclose(f) == 0);
+    return 0;
+}
+
 static int tests_passed = 0;
 static int tests_failed = 0;
 
