@@ -389,7 +389,7 @@ static cJSON *dm_state(cJSON *msgs, cJSON *actions, const int *status, const cha
         cJSON_AddItemToArray(agenda, view);
     }
     cJSON_AddItemToObject(state, "actions", agenda);
-    if (answer) { cJSON_AddStringToObject(state, "proposed_answer", answer); dm_clip(state, "proposed_answer", 2000); }
+    if (answer) cJSON_AddStringToObject(state, "proposed_answer", answer);
     return state;
 }
 
@@ -622,7 +622,7 @@ static int decision_run(const Config *cfg, cJSON *msgs, const char *input, FILE 
             cJSON_AddItemToArray(history, cJSON_Duplicate(cJSON_GetArrayItem(msgs, observed), 1));
         cJSON *state = dm_state(history, actions, status, answer, path);
         int cursor = 1, n = cJSON_GetArraySize(history);
-        while (n != compact_at && cursor < cJSON_GetArraySize(history) - 2) {
+        while (!repair && n != compact_at && cursor < cJSON_GetArraySize(history) - 2) {
             char *serialized = cJSON_PrintUnformatted(state);
             int fits = serialized && strlen(serialized) <= (size_t)cfg->decision_context_bytes;
             int allocated = serialized != NULL;
@@ -631,7 +631,7 @@ static int decision_run(const Config *cfg, cJSON *msgs, const char *input, FILE 
             if (dm_compact(cfg, history, state, &cursor, log) < 0) break;
             cJSON_Delete(state); state = dm_state(history, actions, status, answer, path);
         }
-        compact_at = cJSON_GetArraySize(history);
+        if (!repair) compact_at = cJSON_GetArraySize(history);
         cJSON *questions = dm_questions(cfg, actions, status, answer);
         cJSON *criteria = cJSON_GetObjectItem(cJSON_GetObjectItem(questions, "next"), "criteria");
         /* No semantic question exists when generation is the only possibility.
@@ -741,7 +741,7 @@ static int decision_run(const Config *cfg, cJSON *msgs, const char *input, FILE 
                     ? "Generation exceeded its output-token limit; no commands executed. Return a smaller plan with shorter commands, one JSON object and no repeated drafts."
                     : !cJSON_IsObject(plan)
                     ? "Generation did not return exactly one JSON object; no commands executed. Return only {actions:[...],answer:null}, without fences, extra objects or commentary."
-                    : "Generation returned an invalid or oversized agenda; no commands executed. Reduce actions/argument candidates to fit the 32000-byte decision request INCLUDING instructions and all branches. Named procedures require repeat:true and no after dependencies; forget accepts existing names not also replaced. Dependencies refer only to earlier actions in the NEW plan. Return a smaller corrected plan.";
+                    : "Generation returned an invalid or oversized agenda; no commands executed. Reduce actions/argument candidates/answer to fit the 32000-byte decision request INCLUDING instructions and all branches. Named procedures require repeat:true and no after dependencies; forget accepts existing names not also replaced. Dependencies refer only to earlier actions in the NEW plan. Return a smaller corrected plan.";
                 log_write(log, "ERROR", error);
                 dm_recovery(msgs, generation_msgs, error, log);
                 repair = 1;
