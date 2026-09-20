@@ -591,12 +591,48 @@ static void test_decision_dependencies(void) {
     assert(!dm_valid_actions(a)); cJSON_Delete(a); PASS();
 }
 
+static void test_retained_procedures(void) {
+    TEST("decision: retain, replace and forget named procedures");
+    cJSON *a = cJSON_Parse("[{\"procedure\":\"read\",\"repeat\":true,\"description\":\"Read\",\"command\":\"cat old\"}]");
+    cJSON *empty = cJSON_CreateArray();
+    int status[DM_ACTIONS] = {-1};
+    assert(dm_install(&a, status, empty, NULL));
+    assert(cJSON_GetArraySize(a) == 1 && status[0] == -1 && !dm_ready(a, 0, status));
+    cJSON *update = cJSON_Parse("[{\"procedure\":\"read\",\"repeat\":true,\"description\":\"Read\",\"command\":\"cat new\"}]");
+    assert(dm_install(&a, status, update, NULL));
+    assert(cJSON_GetArraySize(a) == 1 && dm_ready(a, 0, status));
+    assert(!strcmp(dm_string(cJSON_GetArrayItem(a, 0), "command"), "cat new"));
+    cJSON *forget = cJSON_Parse("[\"read\"]");
+    assert(!dm_install(&a, status, update, forget)); /* cannot forget and replace together */
+    assert(dm_install(&a, status, empty, forget) && !cJSON_GetArraySize(a));
+    cJSON_Delete(a); cJSON_Delete(empty); cJSON_Delete(update); cJSON_Delete(forget); PASS();
+}
+
+static void test_retained_procedure_bounds(void) {
+    TEST("decision: rejected procedure merge preserves previous agenda");
+    cJSON *a = cJSON_Parse("[{\"procedure\":\"read\",\"repeat\":true,\"description\":\"Read\",\"command\":\"true\"}]");
+    cJSON *full = cJSON_CreateArray(), *before = a;
+    for (int i = 0; i < DM_ACTIONS; i++)
+        cJSON_AddItemToArray(full, cJSON_Parse("{\"description\":\"Step\",\"command\":\"true\"}"));
+    int status[DM_ACTIONS] = {1};
+    assert(!dm_install(&a, status, full, NULL) && a == before && status[0] == 1);
+    cJSON *invalid = cJSON_Duplicate(a, 1);
+    cJSON_AddItemToArray(invalid, cJSON_Duplicate(cJSON_GetArrayItem(a, 0), 1));
+    assert(!dm_valid_actions(invalid));
+    cJSON_DeleteItemFromArray(invalid, 1);
+    cJSON_AddItemToObject(cJSON_GetArrayItem(invalid, 0), "after", cJSON_Parse("[0]"));
+    assert(!dm_valid_actions(invalid));
+    cJSON_Delete(a); cJSON_Delete(full); cJSON_Delete(invalid); PASS();
+}
+
 int main(void) {
     printf("\n  SubZeroClaw test suite\n");
     printf("  ═══════════════════════════════════════════\n\n");
 
     test_decision_contract();
     test_decision_dependencies();
+    test_retained_procedures();
+    test_retained_procedure_bounds();
     test_shell_echo();
     test_shell_pipe();
     test_shell_stderr();

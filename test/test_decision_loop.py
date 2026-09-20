@@ -39,6 +39,7 @@ class DecisionLoopTest(unittest.TestCase):
         self.generate = lambda body: {'actions': [], 'answer': 'done'}
         self.finish_reason = 'stop'
         self.signal_compact = False
+        self.generated_tool_calls = None
         self.compact = lambda body: {'messages': body['messages']}
         case = self
 
@@ -60,6 +61,8 @@ class DecisionLoopTest(unittest.TestCase):
                         'role': 'assistant', 'content': plan if isinstance(plan, str) else json.dumps(plan)}}]}
                     if case.signal_compact:
                         data['x_router'] = {'compact': True}
+                    if case.generated_tool_calls:
+                        data['choices'][0]['message']['tool_calls'] = case.generated_tool_calls
                 status = 200
                 if isinstance(data, tuple):
                     status, data = data
@@ -101,8 +104,8 @@ class DecisionLoopTest(unittest.TestCase):
         self.assertEqual(len(chats), 1)
         self.assertNotIn('tools', chats[0])
         options = [b['questions']['next']['criteria'] for p, b in self.calls if 'next' in b.get('questions', {})]
-        self.assertNotIn('action_1', options[1])
-        self.assertNotIn('finish', options[1])
+        self.assertNotIn('action_1', options[0])
+        self.assertNotIn('finish', options[0])
         self.assertIn('finish', options[-1])
         records = self.archive()
         ids = [c['id'] for m in records for c in m.get('tool_calls', [])]
@@ -117,7 +120,7 @@ class DecisionLoopTest(unittest.TestCase):
         result = self.run_agent()
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         paths = [p for p, _ in self.calls]
-        self.assertEqual(paths[:3], ['/v1/decisions'] * 3)
+        self.assertEqual(paths[:3], ['/v1/decisions', '/v1/decisions', '/v1/chat/completions'])
         chat = next(b for p, b in self.calls if p == '/v1/chat/completions')
         self.assertIn('discovered evidence', str(chat['messages']))
         self.assertEqual(paths.count('/v1/chat/completions'), 1)
@@ -150,7 +153,8 @@ class DecisionLoopTest(unittest.TestCase):
 
     def test_transient_decision_failure_does_not_repeat_a_tool(self):
         (self.skills / 'actions.json').write_text(json.dumps([
-            {'description': 'record one execution', 'command': 'printf x >> executed', 'verify': True}]))
+            {'description': 'record one execution', 'command': 'printf x >> executed'},
+            {'description': 'verify once', 'command': 'test "$(cat executed)" = x', 'after': [0], 'verify': True}]))
         failed = False
         def decide(body):
             nonlocal failed
@@ -168,12 +172,14 @@ class DecisionLoopTest(unittest.TestCase):
         self.assertEqual(decisions[1], decisions[2])
 
     def test_permanent_http_error_is_not_retried(self):
+        (self.skills / 'actions.json').write_text('[{"description":"fixture","command":"true"}]')
         self.decide = lambda _: (401, {'error': {'message': 'invalid credential'}})
         result = self.run_agent()
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(len(self.calls), 1)
 
     def test_persistent_gateway_failure_has_bounded_retries(self):
+        (self.skills / 'actions.json').write_text('[{"description":"fixture","command":"true"}]')
         self.decide = lambda _: (503, {'error': {'message': 'unavailable'}})
         result = self.run_agent()
         self.assertNotEqual(result.returncode, 0)
@@ -245,11 +251,9 @@ class DecisionLoopTest(unittest.TestCase):
         self.decide = decide
         result = self.run_agent()
         self.assertEqual(result.returncode, 0, result.stderr.decode())
-        # Inspect the decision immediately after the last tool, before generation
-        # adds another message and could trigger a separate compaction cycle.
-        completed = next(b for _, b in self.calls if 'next' in b.get('questions', {})
-                         and len(b['state']['actions']) == 12
-                         and all(a['status'] == 1 for a in b['state']['actions']))
+        # Generation is forced when all actions are done. Its proposal is not
+        # added to decision history, so the final decision sees the selected view.
+        completed = [b for _, b in self.calls if 'next' in b.get('questions', {})][-1]
         self.assertNotIn('OBS_8_', str(completed['state']['history']))
         self.assertIn('OBS_11_', str(completed['state']['history']))
         self.assertEqual(sum(m['role'] == 'tool' for m in self.archive()), 12)
@@ -442,6 +446,70 @@ class DecisionLoopTest(unittest.TestCase):
         result = self.run_agent()
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.home / 'forbidden').exists())
+
+    def test_named_procedure_survives_replan_and_discovery(self):
+        (self.home / 'source.txt').write_text('first-evidence')
+        generations = []
+        reads = 0
+        mutation = [{'description': 'Refresh source', 'command': 'printf second-evidence > source.txt'}]
+        def generate(body):
+            generations.append(body)
+            if len(generations) == 1:
+                return {'actions': [{'procedure': 'reader', 'description': 'Read source', 'repeat': True,
+                        'command': 'cat -- "$1"', 'parameters': [{'description': 'Source file', 'values': ['source.txt']}]}]}
+            if len(generations) == 2:
+                return {'actions': [{'description': 'Discover mutation', 'discover': True,
+                        'command': 'printf %s ' + shlex.quote(json.dumps(mutation))}]}
+            return {'actions': [], 'answer': 'read fresh observations using the retained procedure'}
+        def decide(body):
+            nonlocal reads
+            if 'next' not in body['questions']: return decision_reply(body)
+            if 'finish' in body['questions']['next']['criteria']: return decision_reply(body, 'finish')
+            for a in body['state']['actions']:
+                if a['ready'] and a['description'] in ('Discover mutation', 'Refresh source'):
+                    return decision_reply(body, a['id'])
+            for a in body['state']['actions']:
+                if a.get('procedure') == 'reader' and a['ready'] and reads < len(generations):
+                    reads += 1
+                    return decision_reply(body, a['id'])
+            return decision_reply(body, 'generate')
+        self.generate = generate; self.decide = decide
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(reads, 2)
+        self.assertEqual(len(generations), 3)
+        self.assertIn('first-evidence', str(generations[-1]['messages']))
+        self.assertIn('second-evidence', str(generations[-1]['messages']))
+        self.assertEqual(sum(m['role'] == 'tool' for m in self.archive()), 4)
+
+    def test_forced_generation_skips_inference_and_decision_history_omits_programs(self):
+        marker = 'PROGRAM_BODY_' + 'x' * 1200
+        self.generate = lambda _: {'actions': [{'description': 'Produce evidence',
+            'command': "printf %s '" + marker + "' > artifact; printf observed", 'verify': True}], 'answer': 'done'}
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(self.calls[0][0], '/v1/chat/completions')
+        for _, body in self.calls:
+            if 'next' in body.get('questions', {}):
+                self.assertNotEqual(set(body['questions']['next']['criteria']), {'generate'})
+                self.assertNotIn('PROGRAM_BODY_', str(body['state']['history']))
+        self.assertIn(marker, str(self.archive()))
+
+    def test_rejected_tool_response_is_archived_but_never_executed_or_replayed(self):
+        generations = []
+        tool = {'id': 'rejected-call', 'type': 'function',
+                'function': {'name': 'shell', 'arguments': '{"command":"touch forbidden"}'}}
+        def generate(body):
+            generations.append(body)
+            self.generated_tool_calls = [tool] if len(generations) == 1 else None
+            return {'actions': [], 'answer': 'recovered'}
+        self.generate = generate
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertFalse((self.home / 'forbidden').exists())
+        self.assertEqual(len(generations), 2)
+        self.assertFalse(any(m.get('tool_calls') for m in generations[1]['messages']))
+        self.assertTrue(any(m.get('tool_calls') == [tool] for m in self.archive()))
 
     def test_truncated_plan_is_not_executed_and_recovery_gets_the_reason(self):
         calls = []

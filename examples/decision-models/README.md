@@ -130,6 +130,20 @@ are arbitrary shell commands with the existing process privileges.
 
 ## Context and compaction
 
+A single `generate` option runs directly without asking the decision model to
+choose it. Choosing between generation policies, executing a prepared action and
+finishing still requires a decision. Decision history contains execution results
+and literal bound arguments; it does not repeat generated programs or plan
+summaries that are already represented by the current agenda.
+
+Reusable actions can set `procedure: "name"`, `repeat: true` and no `after`
+dependencies to survive both replanning and discovery during the current run.
+New actions with the same name replace the definition and candidate values;
+top-level `forget: ["name"]` in a generated plan explicitly removes one. The
+merged agenda must fit the existing 24-action/31-parameter limits. A failed
+retained procedure stays disabled until replaced or forgotten. These are shell
+procedures generated from the task and observations, not a built-in tool catalog.
+
 Every conversation message is flushed to a private `<session>.events.jsonl`
 archive before selection. A separate decision view can then discard complete older
 assistant/tool-result units chosen by the decision model. System/user messages
@@ -160,6 +174,8 @@ claim of unlimited context, guaranteed speedup, or measured model quality.
 HTTP fixtures: multiple actions between generations, discovery, dependencies,
 failed-check recovery, invalid decisions/plans/arguments, archive retention,
 parameterized discovery and reuse, literal shell binding, unified generation
-policies, policy/flow forwarding and credential scrubbing. It does not spend provider credits.
+policies, retained procedures across replanning/discovery, atomic replacement and
+invalidation, rejected-response audit retention, policy/flow forwarding and
+credential scrubbing. It does not spend provider credits.
 Compare verified task completion, total inference cost, latency and generation
 count on representative real tasks before replacing an existing deployment.
