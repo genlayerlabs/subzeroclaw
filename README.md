@@ -6,13 +6,13 @@
 
 > **WARNING: This software executes arbitrary shell commands with no safety checks, no confirmation prompts, no sandboxing, and no guardrails. The LLM decides what to run and the runtime runs it — `rm -rf /` included. There is nothing between the model's output and your system. If you don't understand what that means, do not use this. This is a bare agentic loop: execute the task, whatever it takes, nothing more, nothing less.**
 
-**A single-file C runtime for skill-driven agents.**
+**A small C runtime for skill-driven agents.**
 
 ```
 skill.md + LLM + shell + loop = autonomous agent
 ```
 
-Every agentic runtime does the same thing: read a skill, call an LLM, execute tools, loop. SubZeroClaw is that principle written directly in C — no framework, no abstractions, no architecture mimicking a problem that never existed. One file, one loop, one tool.
+Every agentic runtime does the same thing: read a skill, call an LLM, execute tools, loop. SubZeroClaw is that principle written directly in C — no framework, no abstractions, no architecture mimicking a problem that never existed. One executable, one shell tool.
 
 ## What it does
 
@@ -25,6 +25,18 @@ You write a skill as a markdown file. You point SubZeroClaw at it. It calls an L
 ```
 
 The agent reads the skill into its system prompt, receives input, and autonomously calls tools until the task is complete. When context grows, the router signals it and the agent seals the old turns **asynchronously** (append-only, in the background) — it never pauses to compact (see "Routing & compaction via unhardcoded").
+
+## Decision-model control
+
+Set `decision_extra` to enable a controller that selects prepared shell actions
+and asks for generation only when needed. `request_extra` can carry a router
+`flow_ir` that chooses an economical or capable generative model from the task
+history. The runtime has no model names built in.
+
+This mode adds executable agendas, dependencies, optional discovery through
+shell, completion checks, and recoverable context selection. See the
+[configuration, action contract and limitations](examples/decision-models/README.md).
+The original loop described below remains the default when `decision_extra` is unset.
 
 ## Quickstart
 
@@ -235,6 +247,8 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 |-----|---------|-------------|
 | `api_key` | (required) | The unhardcoded router consumer key (`llmr_…`); an OpenRouter/provider key works in the degraded standalone mode |
 | `request_extra` | (none) | the loop JSON merged into every request body — carries the `model`, and against an unhardcoded router the routing `policy_ir` |
+| `decision_extra` | (none) | Enables typed decision control; JSON sent with state/questions to `/v1/decisions` |
+| `decision_context_bytes` | 18000 | Selection threshold in decision mode, 4096–24000 bytes |
 | `compact_extra` | (none) | the compaction JSON — `keep_recent` + the cheap summariser `policy_ir`; unset disables compaction |
 | `endpoint` | `https://openrouter.ai/api/v1/chat/completions` | API endpoint (point it at an unhardcoded router for routing/cache/compaction) |
 | `skills_dir` | `~/.subzeroclaw/skills` | Path to skill markdown files |
@@ -254,7 +268,8 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 
 ```
 src/
-├── subzeroclaw.c              The entire runtime
+├── subzeroclaw.c              Transport, shell and generative loop
+├── decision.h                 Typed controller and context selection
 ├── test.c                      the test suite
 ├── cJSON.c                     Vendored JSON parser
 └── cJSON.h

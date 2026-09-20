@@ -133,7 +133,7 @@ static void test_turn_newline_framed_tty(void) {
 
 static void test_turn_eof_empty_is_null(void) {
     TEST("read_turn: EOF with no bytes returns NULL");
-    FILE *f = fmemopen("", 0, "r");
+    FILE *f = tmpfile(); assert(f); /* zero-sized fmemopen is not portable */
     char *r = read_turn(f, '\0');
     if (r == NULL) PASS();
     else FAIL(r);
@@ -564,10 +564,39 @@ static void test_compact_splice(void) {
     cJSON_Delete(msgs);
 }
 
+static void test_decision_contract(void) {
+    TEST("decision: typed choices cannot become commands");
+    cJSON *criteria = cJSON_Parse("{\"generate\":\"New work\",\"action_0\":\"Read\"}");
+    cJSON *reply = cJSON_Parse("{\"answers\":{\"next\":{\"type\":\"choice\",\"choice\":\"action_0\",\"probabilities\":{\"generate\":0.1,\"action_0\":0.9}}}}");
+    assert(dm_choice(reply, "next", criteria));
+    cJSON *ans = cJSON_GetObjectItem(cJSON_GetObjectItem(reply, "answers"), "next");
+    cJSON_ReplaceItemInObject(ans, "choice", cJSON_CreateString("rm -rf anything"));
+    assert(!dm_choice(reply, "next", criteria));
+    cJSON_Delete(reply); cJSON_Delete(criteria); PASS();
+}
+
+static void test_decision_dependencies(void) {
+    TEST("decision: dependencies and verification block completion");
+    cJSON *a = cJSON_Parse("[{\"description\":\"Edit\",\"command\":\"true\"},{\"description\":\"Check\",\"command\":\"true\",\"after\":[0],\"verify\":true}]");
+    int status[DM_ACTIONS] = {0};
+    assert(dm_valid_actions(a));
+    assert(dm_ready(a, 0, status) && !dm_ready(a, 1, status));
+    assert(!dm_can_finish(a, status, "Done"));
+    status[0] = -1; assert(!dm_ready(a, 1, status));
+    status[0] = 1; assert(dm_ready(a, 1, status));
+    status[1] = 1; assert(dm_can_finish(a, status, "Done"));
+    cJSON_Delete(a);
+    a = cJSON_Parse("[null]"); assert(!dm_valid_actions(a)); cJSON_Delete(a);
+    a = cJSON_Parse("[{\"description\":\"Cycle\",\"command\":\"true\",\"after\":[0]}]");
+    assert(!dm_valid_actions(a)); cJSON_Delete(a); PASS();
+}
+
 int main(void) {
     printf("\n  SubZeroClaw test suite\n");
     printf("  ═══════════════════════════════════════════\n\n");
 
+    test_decision_contract();
+    test_decision_dependencies();
     test_shell_echo();
     test_shell_pipe();
     test_shell_stderr();

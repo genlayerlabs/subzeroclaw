@@ -1,0 +1,11 @@
+[
+  {
+    "description": "Inspect repository status before planning changes, when the task concerns this repository",
+    "command": "git status --short"
+  },
+  {
+    "description": "Discover tracked source files as concrete read actions when repository exploration is useful",
+    "command": "git ls-files -z | python3 -c 'import sys,json,shlex; names=sys.stdin.buffer.read().decode().split(chr(0)); print(json.dumps([{\"description\":\"Read \"+p,\"command\":\"head -n 100 -- \"+shlex.quote(p)} for p in names if p and p.endswith((\".c\",\".h\",\".py\",\".md\"))][:24]))'",
+    "discover": true
+  }
+]

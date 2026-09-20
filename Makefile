@@ -13,11 +13,11 @@ else
 endif
 
 # Single-file build (default)
-$(TARGET): src/subzeroclaw.c $(VENDOR)
+$(TARGET): src/subzeroclaw.c src/decision.h $(VENDOR)
 	$(CC) $(CFLAGS) -o $(TARGET) src/subzeroclaw.c $(VENDOR) $(LDFLAGS)
 
 # Test: test.c includes subzeroclaw.c directly (SZC_TEST excludes main)
-test: src/test.c src/subzeroclaw.c $(VENDOR)
+test: src/test.c src/subzeroclaw.c src/decision.h $(VENDOR)
 	$(CC) $(CFLAGS) -o test_subzeroclaw src/test.c $(VENDOR) $(LDFLAGS)
 	./test_subzeroclaw
 

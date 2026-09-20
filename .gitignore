@@ -22,3 +22,5 @@ watchdog
 
 # Tooling
 .superpowers/
+
+*.dSYM/
