@@ -364,7 +364,8 @@ static const char DM_GENERATE[] =
     "command for every file/item. When candidates are unknown, prepare a discover:true command "
     "that enumerates the environment and emits parameterized procedures using the observed values. "
     "Do not request another generation merely to substitute a parameter or execute a prepared step. "
-    "after contains zero-based indexes of earlier actions that must succeed first. "
+    "after contains zero-based indexes of earlier actions IN THIS NEW PLAN that must succeed first. "
+    "The first action must have after:[]; never refer to old agenda indexes or to the action itself. "
     "Mark required outcome checks verify:true; the controller cannot finish until they succeed. "
     "discover:true means successful stdout is a JSON actions array with this same schema, replacing "
     "the agenda; use it to enumerate actionable files/links/tests from observations without another "
@@ -434,8 +435,8 @@ static int decision_run(const Config *cfg, cJSON *msgs, const char *input, FILE 
         compact_at = cJSON_GetArraySize(msgs);
         cJSON *criteria = cJSON_CreateObject();
         if (cfg->economy_extra[0]) {
-            cJSON_AddStringToObject(criteria, "generate_economy", "Generation is needed for a routine command, straightforward edit, or response grounded in clear evidence. No ready action already performs this work.");
-            cJSON_AddStringToObject(criteria, "generate_capable", "Generation is needed for difficult code, novel reasoning, ambiguous evidence, or recovery after failed attempts. No ready action already performs this work.");
+            cJSON_AddStringToObject(criteria, "generate_economy", "The next generation prepares initial exploration, routine commands, straightforward edits, or a response grounded in clear evidence. Prefer this for exploration when the environment is still unknown. No ready action already performs this work.");
+            cJSON_AddStringToObject(criteria, "generate_capable", "The next generation itself requires difficult code, novel reasoning, resolving ambiguous evidence, or recovery after an economical generation failed. Do not select merely because the eventual goal sounds complex when the next step is routine exploration. No ready action already performs this work.");
         } else cJSON_AddStringToObject(criteria, "generate", "No ready action can advance the goal, an existing command needs correction, or a final response needs drafting. Do not regenerate an already prepared action.");
         if (dm_can_finish(actions, status, answer))
             cJSON_AddStringToObject(criteria, "finish", "The proposed response answers the user and available evidence establishes completion");
@@ -490,15 +491,27 @@ static int decision_run(const Config *cfg, cJSON *msgs, const char *input, FILE 
             Config generation = *cfg;
             if (!strcmp(choice, "generate_economy"))
                 snprintf(generation.request_extra, MAX_EXTRA, "%s", cfg->economy_extra);
+            cJSON *extra = generation.request_extra[0] ? cJSON_Parse(generation.request_extra) : cJSON_CreateObject();
+            if (!cJSON_IsObject(extra)) { cJSON_Delete(extra); cJSON_Delete(request_msgs); break; }
+            if (!cJSON_GetObjectItem(extra, "response_format")) {
+                cJSON *format = cJSON_CreateObject();
+                cJSON_AddStringToObject(format, "type", "json_object");
+                cJSON_AddItemToObject(extra, "response_format", format);
+            }
+            char *encoded = cJSON_PrintUnformatted(extra); cJSON_Delete(extra);
+            if (!encoded || strlen(encoded) >= MAX_EXTRA) {
+                free(encoded); cJSON_Delete(request_msgs); break;
+            }
+            snprintf(generation.request_extra, MAX_EXTRA, "%s", encoded); free(encoded);
             char *raw = llm_chat(&generation, request_msgs, NULL);
             cJSON_Delete(request_msgs);
             Response resp;
             if (!raw || parse_response(raw, &resp)) { free(raw); break; }
             free(raw);
-            cJSON *plan = resp.text ? cJSON_Parse(resp.text) : NULL;
+            cJSON *plan = resp.text ? cJSON_ParseWithOpts(resp.text, NULL, 1) : NULL;
             cJSON *proposed = cJSON_GetObjectItem(plan, "actions");
             cJSON *ans = cJSON_GetObjectItem(plan, "answer");
-            int valid = !response_has_tool_calls(&resp) && dm_valid_actions(proposed) &&
+            int valid = !strcmp(resp.finish_reason, "stop") && !response_has_tool_calls(&resp) && dm_valid_actions(proposed) &&
                 (!ans || cJSON_IsNull(ans) || (cJSON_IsString(ans) && dm_text(ans->valuestring, MAX_OUTPUT))) &&
                 (cJSON_GetArraySize(proposed) || cJSON_IsString(ans));
             if (valid) {
@@ -522,7 +535,13 @@ static int decision_run(const Config *cfg, cJSON *msgs, const char *input, FILE 
                     free(note);
                 }
             } else {
-                cJSON_AddItemToArray(msgs, make_msg("system", "Generation returned an invalid agenda; no commands executed. Request a corrected JSON agenda."));
+                const char *error = !strcmp(resp.finish_reason, "length")
+                    ? "Generation exceeded its output-token limit; no commands executed. Return a smaller plan with shorter commands, one JSON object and no repeated drafts."
+                    : !cJSON_IsObject(plan)
+                    ? "Generation did not return exactly one JSON object; no commands executed. Return only {actions:[...],answer:null}, without fences, extra objects or commentary."
+                    : "Generation returned an invalid agenda; no commands executed. Check schema and bounds. Dependencies refer only to earlier actions in the NEW plan: first action after:[], never self/old references. Return a corrected plan.";
+                log_write(log, "ERROR", error);
+                cJSON_AddItemToArray(msgs, make_msg("system", error));
             }
             if (resp.usage[0]) log_write(log, "USAGE", resp.usage);
             cJSON_Delete(plan); response_free(&resp);

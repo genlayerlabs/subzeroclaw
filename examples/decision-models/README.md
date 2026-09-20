@@ -21,7 +21,10 @@ Use a router consumer key and its `/v1/chat/completions` endpoint as usual.
 capable generation policy and optional `economy_extra` supplies an economical
 one. The controller chooses an action, `generate_economy`, `generate_capable`,
 or `finish` in **one decision**. Both generation configurations must contain
-direct `policy_ir` (no nested `flow_ir`, messages or tools). The router still
+direct `policy_ir` (no nested `flow_ir`, messages or tools). The generation request defaults to `response_format: {"type":"json_object"}`
+(unless supplied by the operator), so its policy must admit a compatible model.
+Truncated output and multiple JSON objects are rejected without execution;
+recovery receives a specific error. The router still
 selects the actual model offer/provider and handles fallback within that policy.
 
 Generate config using the **exact model families in your router catalog**:

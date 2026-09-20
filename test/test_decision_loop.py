@@ -37,6 +37,7 @@ class DecisionLoopTest(unittest.TestCase):
         self.headers = []
         self.decide = decision_reply
         self.generate = lambda body: {'actions': [], 'answer': 'done'}
+        self.finish_reason = 'stop'
         case = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -50,8 +51,9 @@ class DecisionLoopTest(unittest.TestCase):
                 if self.path == '/v1/decisions':
                     data = case.decide(body)
                 else:
-                    data = {'choices': [{'finish_reason': 'stop', 'message': {
-                        'role': 'assistant', 'content': json.dumps(case.generate(body))}}]}
+                    plan = case.generate(body)
+                    data = {'choices': [{'finish_reason': case.finish_reason, 'message': {
+                        'role': 'assistant', 'content': plan if isinstance(plan, str) else json.dumps(plan)}}]}
                 status = 200
                 if isinstance(data, tuple):
                     status, data = data
@@ -366,6 +368,31 @@ class DecisionLoopTest(unittest.TestCase):
                 reply['answers']['action_0_arg_0']['choice'] = 'invented_value'
             return reply
         self.decide = decide
+        result = self.run_agent()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.home / 'forbidden').exists())
+
+    def test_truncated_plan_is_not_executed_and_recovery_gets_the_reason(self):
+        calls = []
+        def generate(body):
+            calls.append(body)
+            self.assertEqual(body['response_format'], {'type': 'json_object'})
+            if len(calls) == 1:
+                self.finish_reason = 'length'
+                return {'actions': [{'description': 'must not execute partial plan', 'command': 'touch forbidden'}]}
+            self.finish_reason = 'stop'
+            self.assertIn('output-token limit', str(body['messages']))
+            return {'actions': [], 'answer': 'recovered'}
+        self.generate = generate
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(len(calls), 2)
+        self.assertFalse((self.home / 'forbidden').exists())
+
+    def test_multiple_json_objects_are_rejected_without_executing_first_plan(self):
+        self.config.write_text('max_turns=2\n')
+        self.generate = lambda _: json.dumps({'actions': [{'description': 'invalid response',
+            'command': 'touch forbidden'}]}) + '\n' + json.dumps({'actions': [], 'answer': 'second draft'})
         result = self.run_agent()
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.home / 'forbidden').exists())
