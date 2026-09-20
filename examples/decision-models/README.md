@@ -8,6 +8,11 @@ This is an opt-in mode: set `decision_extra` to a JSON object. Without it the
 existing generative loop and asynchronous `/v1/compact` behavior stay available.
 No vendor or model name is compiled into the controller.
 
+Transient HTTP failures use curl’s bounded retry policy (at most two retries).
+The same inference request is retried; previously executed shell actions are
+not repeated. Permanent errors such as HTTP 401 are not retried. Retried
+inference can incur additional provider cost, so meter all HTTP attempts.
+
 ## Configure
 
 Use a router consumer key and its `/v1/chat/completions` endpoint as usual.

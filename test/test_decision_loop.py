@@ -52,8 +52,11 @@ class DecisionLoopTest(unittest.TestCase):
                 else:
                     data = {'choices': [{'finish_reason': 'stop', 'message': {
                         'role': 'assistant', 'content': json.dumps(case.generate(body))}}]}
+                status = 200
+                if isinstance(data, tuple):
+                    status, data = data
                 data = json.dumps(data).encode()
-                self.send_response(200)
+                self.send_response(status)
                 self.send_header('Content-Length', str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
@@ -134,6 +137,38 @@ class DecisionLoopTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.home / 'forbidden').exists())
         self.assertEqual(len(self.calls), 1)
+
+    def test_transient_decision_failure_does_not_repeat_a_tool(self):
+        (self.skills / 'actions.json').write_text(json.dumps([
+            {'description': 'record one execution', 'command': 'printf x >> executed', 'verify': True}]))
+        failed = False
+        def decide(body):
+            nonlocal failed
+            actions = body['state']['actions']
+            if actions and actions[0]['status'] == 1 and not failed:
+                failed = True
+                return 502, {'error': {'message': 'temporary gateway failure'}}
+            return decision_reply(body)
+        self.decide = decide
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertTrue(failed)
+        self.assertEqual((self.home / 'executed').read_text(), 'x')
+        decisions = [b for p, b in self.calls if p == '/v1/decisions']
+        self.assertEqual(decisions[1], decisions[2])
+
+    def test_permanent_http_error_is_not_retried(self):
+        self.decide = lambda _: (401, {'error': {'message': 'invalid credential'}})
+        result = self.run_agent()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_persistent_gateway_failure_has_bounded_retries(self):
+        self.decide = lambda _: (503, {'error': {'message': 'unavailable'}})
+        result = self.run_agent()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(self.calls), 3)
+        self.assertTrue(all(b == self.calls[0][1] for _, b in self.calls))
 
     def test_invalid_plan_does_not_execute_embedded_commands(self):
         self.config.write_text('max_turns=3\n')

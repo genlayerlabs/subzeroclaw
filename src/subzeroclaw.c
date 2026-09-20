@@ -123,6 +123,8 @@ static void log_write(FILE *log, const char *role, const char *content) {
     fprintf(log, "[%s] %s: %s\n", ts, role, content); fflush(log);
 }
 
+static char *read_file(const char *path);
+
 static char *http_post(const char *url, const char *api_key, const char *session,
                        const char *body, const char *work_dir) {
     /* A compaction's parent owns its directory and can clean it on cancellation.
@@ -130,9 +132,10 @@ static char *http_post(const char *url, const char *api_key, const char *session
     char own_dir[] = "/tmp/.szc_http_XXXXXX";
     if (strpbrk(api_key, "\r\n") || (session && strpbrk(session, "\r\n"))) return NULL;
     if (!work_dir) { if (!mkdtemp(own_dir)) return NULL; work_dir = own_dir; }
-    char body_path[128], hdr_path[128], body_arg[130], hdr_arg[130];
+    char body_path[128], hdr_path[128], reply_path[128], body_arg[130], hdr_arg[130];
     snprintf(body_path, sizeof(body_path), "%s/body", work_dir);
     snprintf(hdr_path, sizeof(hdr_path), "%s/headers", work_dir);
+    snprintf(reply_path, sizeof(reply_path), "%s/response", work_dir);
     char *buf = NULL;
     char hdr[2 * MAX_VALUE + 128];
     /* The unhardcoded router pins cache affinity AND meters per-session
@@ -144,8 +147,8 @@ static char *http_post(const char *url, const char *api_key, const char *session
                  api_key, session);
     else
         snprintf(hdr, sizeof(hdr), "Authorization: Bearer %s\n", api_key);
-    const char *paths[] = {body_path, hdr_path}, *data[] = {body, hdr};
-    for (int i = 0; i < 2; i++) {
+    const char *paths[] = {body_path, hdr_path, reply_path}, *data[] = {body, hdr, ""};
+    for (int i = 0; i < 3; i++) {
         int fd = open(paths[i], O_WRONLY | O_CREAT | O_EXCL, 0600);
         if (fd < 0) goto cleanup;
         FILE *f = fdopen(fd, "w");
@@ -156,41 +159,26 @@ static char *http_post(const char *url, const char *api_key, const char *session
     }
     snprintf(body_arg, sizeof(body_arg), "@%s", body_path);
     snprintf(hdr_arg, sizeof(hdr_arg), "@%s", hdr_path);
-    int output[2];
-    if (pipe(output)) goto cleanup;
+    /* A transient gateway failure must not discard a completed tool step.
+     * curl retries the same inference request, never a shell action. A regular
+     * output file lets curl rewind partial responses before retrying. */
     fflush(NULL);
     pid_t pid = fork();
     if (pid == 0) {
-        close(output[0]); dup2(output[1], STDOUT_FILENO); close(output[1]);
-        execlp("curl", "curl", "--silent", "--fail", "--max-time", "120",
+        execlp("curl", "curl", "--silent", "--show-error", "--fail",
+               "--max-time", "120", "--retry", "2", "--retry-delay", "1",
+               "--retry-max-time", "180", "--output", reply_path,
                "--header", hdr_arg, "--header", "Content-Type: application/json",
                "--data-binary", body_arg, "--url", url, (char *)NULL);
         _exit(127);
     }
-    close(output[1]);
-    if (pid < 0) { close(output[0]); goto cleanup; }
-    FILE *fp = fdopen(output[0], "r");
-    if (!fp) { close(output[0]); kill(pid, SIGTERM); }
-
-    size_t cap = 65536, len = 0, n;
-    if (fp) buf = malloc(cap);
-    while (buf && (n = fread(buf + len, 1, cap - len - 1, fp)) > 0) {
-        len += n;
-        if (len + 1 >= cap) {
-            cap *= 2;
-            char *nb = realloc(buf, cap);
-            if (!nb) { free(buf); buf = NULL; break; }
-            buf = nb;
-        }
-    }
-    if (buf) buf[len] = '\0';
-    if (fp) fclose(fp);
+    if (pid < 0) goto cleanup;
     int status = 0;
     pid_t waited;
     do { waited = waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
-    if (waited < 0 || !WIFEXITED(status) || WEXITSTATUS(status)) { free(buf); buf = NULL; }
+    if (waited > 0 && WIFEXITED(status) && !WEXITSTATUS(status)) buf = read_file(reply_path);
 cleanup:
-    unlink(body_path); unlink(hdr_path);
+    unlink(body_path); unlink(hdr_path); unlink(reply_path);
     if (work_dir == own_dir) rmdir(own_dir);
     return buf;
 }
@@ -437,6 +425,7 @@ static void compact_clear(Compaction *pending) {
         char path[128];
         snprintf(path, sizeof(path), "%s/body", pending->dir); unlink(path);
         snprintf(path, sizeof(path), "%s/headers", pending->dir); unlink(path);
+        snprintf(path, sizeof(path), "%s/response", pending->dir); unlink(path);
         rmdir(pending->dir);
     }
     memset(pending, 0, sizeof(*pending));
