@@ -23,6 +23,7 @@ typedef struct {
     char skills_dir[MAX_PATH], log_dir[MAX_PATH];
     char request_extra[MAX_EXTRA];   /* the loop JSON: model + routing policy_ir */
     char decision_extra[MAX_EXTRA];  /* nonempty enables typed decision control */
+    char economy_extra[MAX_EXTRA];   /* optional direct economical generation policy */
     int decision_context_bytes;
     char compact_extra[MAX_EXTRA];   /* the compaction JSON: keep_recent + seal policy_ir */
     char session[MAX_VALUE];   /* runtime per-run id (sid); sent so the router can
@@ -37,6 +38,7 @@ static void config_parse_line(Config *cfg, const char *key, const char *val) {
     else if (!strcmp(key, "log_dir"))      snprintf(cfg->log_dir,    MAX_PATH,  "%s", val);
     else if (!strcmp(key, "request_extra")) snprintf(cfg->request_extra, MAX_EXTRA, "%s", val);
     else if (!strcmp(key, "decision_extra")) snprintf(cfg->decision_extra, MAX_EXTRA, "%s", val);
+    else if (!strcmp(key, "economy_extra")) snprintf(cfg->economy_extra, MAX_EXTRA, "%s", val);
     else if (!strcmp(key, "decision_context_bytes")) cfg->decision_context_bytes = atoi(val);
     else if (!strcmp(key, "compact_extra")) snprintf(cfg->compact_extra, MAX_EXTRA, "%s", val);
     else if (!strcmp(key, "max_turns"))    cfg->max_turns    = atoi(val);
@@ -81,6 +83,7 @@ int config_load(Config *cfg) {
     if ((v = getenv("SUBZEROCLAW_SKILLS"))) snprintf(cfg->skills_dir, MAX_PATH, "%s", v);
     if ((v = getenv("SUBZEROCLAW_REQUEST_EXTRA"))) snprintf(cfg->request_extra, MAX_EXTRA, "%s", v);
     if ((v = getenv("SUBZEROCLAW_DECISION_EXTRA"))) snprintf(cfg->decision_extra, MAX_EXTRA, "%s", v);
+    if ((v = getenv("SUBZEROCLAW_ECONOMY_EXTRA"))) snprintf(cfg->economy_extra, MAX_EXTRA, "%s", v);
     if ((v = getenv("SUBZEROCLAW_COMPACT_EXTRA"))) snprintf(cfg->compact_extra, MAX_EXTRA, "%s", v);
     if (!cfg->api_key[0]) { fprintf(stderr, "error: no api_key\n"); return -1; }
 
@@ -96,7 +99,7 @@ int config_load(Config *cfg) {
     {
         static const char *const secret_vars[] = {
             "SUBZEROCLAW_API_KEY", "SUBZEROCLAW_ENDPOINT",
-            "SUBZEROCLAW_REQUEST_EXTRA", "SUBZEROCLAW_COMPACT_EXTRA", "SUBZEROCLAW_DECISION_EXTRA"
+            "SUBZEROCLAW_REQUEST_EXTRA", "SUBZEROCLAW_COMPACT_EXTRA", "SUBZEROCLAW_DECISION_EXTRA", "SUBZEROCLAW_ECONOMY_EXTRA"
         };
         for (size_t i = 0; i < sizeof(secret_vars) / sizeof(secret_vars[0]); i++) {
             char *p = getenv(secret_vars[i]);

@@ -31,10 +31,12 @@ request_extra = {"model":"policy:auto","policy_ir":["policy", "..."]}
 # log_dir    = "~/.subzeroclaw/logs"
 # max_turns  = 200
 
-# Optional decision-model controller. Generation still uses request_extra, which
-# may contain a router flow_ir selecting economical/capable generation policies.
+# Optional decision-model controller. Set economy_extra for a single decision
+# selecting action+arguments or economy/capable generation. In this configuration,
+# request_extra and economy_extra each carry a direct policy_ir, without flow_ir.
 # See examples/decision-models/README.md and configure.py.
 # decision_extra = {}
+# economy_extra = {"model":"policy:auto","policy_ir":["policy", "..."]}
 # decision_context_bytes = 18000
 # In decision mode context is selected into a recoverable JSONL archive;
 # compact_extra belongs to the original generative loop.

@@ -29,9 +29,10 @@ The agent reads the skill into its system prompt, receives input, and autonomous
 ## Decision-model control
 
 Set `decision_extra` to enable a controller that selects prepared shell actions
-and asks for generation only when needed. `request_extra` can carry a router
-`flow_ir` that chooses an economical or capable generative model from the task
-history. The runtime has no model names built in.
+and their parameters together, asking for generation only when needed. Set
+`economy_extra` alongside the capable `request_extra` policy to choose economical
+or capable generation in the same controller decision, without a nested routing
+call. The runtime has no model names built in.
 
 This mode adds executable agendas, dependencies, optional discovery through
 shell, completion checks, and recoverable context selection. See the
@@ -248,6 +249,7 @@ Every session gets a random hex ID. All input, output, tool calls, and results a
 | `api_key` | (required) | The unhardcoded router consumer key (`llmr_…`); an OpenRouter/provider key works in the degraded standalone mode |
 | `request_extra` | (none) | the loop JSON merged into every request body — carries the `model`, and against an unhardcoded router the routing `policy_ir` |
 | `decision_extra` | (none) | Enables typed decision control; JSON sent with state/questions to `/v1/decisions` |
+| `economy_extra` | (none) | Optional economical `policy_ir`; controller chooses it or capable `request_extra` in one decision |
 | `decision_context_bytes` | 18000 | Selection threshold in decision mode, 4096–24000 bytes |
 | `compact_extra` | (none) | the compaction JSON — `keep_recent` + the cheap summariser `policy_ir`; unset disables compaction |
 | `endpoint` | `https://openrouter.ai/api/v1/chat/completions` | API endpoint (point it at an unhardcoded router for routing/cache/compaction) |

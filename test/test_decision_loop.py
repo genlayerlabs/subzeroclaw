@@ -16,7 +16,7 @@ def decision_reply(body, choice=None):
     answers = {}
     for name, q in body['questions'].items():
         labels = list(q['criteria'])
-        pick = choice or ('archive' if 'archive' in labels else
+        pick = labels[0] if name != 'next' and labels[0].startswith('value_') else choice or ('archive' if 'archive' in labels else
                           next((x for x in labels if x.startswith('action_')),
                                'finish' if 'finish' in labels else 'generate'))
         answers[name] = {'type': 'choice', 'choice': pick, 'confidence': .99,
@@ -66,12 +66,14 @@ class DecisionLoopTest(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
 
-    def run_agent(self, prompt='complete the fixture task', extra=None):
+    def run_agent(self, prompt='complete the fixture task', extra=None, economy=None):
         env = {'HOME': str(self.home), 'PATH': os.environ['PATH'],
                'SUBZEROCLAW_API_KEY': 'local-fixture-only',
                'SUBZEROCLAW_ENDPOINT': f'http://127.0.0.1:{self.server.server_port}/v1/chat/completions',
                'SUBZEROCLAW_DECISION_EXTRA': '{"policy_ir":["decision-fixture"]}',
                'SUBZEROCLAW_REQUEST_EXTRA': json.dumps(extra or {'model': 'generation-fixture'})}
+        if economy is not None:
+            env['SUBZEROCLAW_ECONOMY_EXTRA'] = json.dumps(economy)
         return subprocess.run([str(BIN), prompt], env=env, cwd=self.home, capture_output=True, timeout=15)
 
     def archive(self):
@@ -262,6 +264,31 @@ class DecisionLoopTest(unittest.TestCase):
         last = [b for _, b in self.calls if 'next' in b.get('questions', {})][-1]
         self.assertIn('ORIGINAL_0_', str(last['state']['history']))
 
+    def test_plan_commands_are_archived_without_duplication_in_generation_history(self):
+        marker = 'PREPARED_COMMAND_' + 'x' * 1200
+        generations = []
+        def generate(body):
+            generations.append(body)
+            if len(generations) == 1:
+                return {'actions': [{'description': 'write and verify artifact',
+                    'command': "printf %s '" + marker + "' > artifact && test -s artifact", 'verify': True}], 'answer': None}
+            return {'actions': [], 'answer': 'verified'}
+        self.generate = generate
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(len(generations), 2)
+        history = generations[-1]['messages']
+        self.assertFalse(any('PREPARED_COMMAND_' in (m.get('content') or '')
+                             for m in history if m['role'] == 'assistant'))
+        self.assertTrue(any(marker in str(m.get('tool_calls', [])) for m in history))
+        self.assertTrue(any(marker in (m.get('content') or '')
+                            for m in self.archive() if m['role'] == 'assistant'))
+        ready = next(b['state']['actions'][0] for _, b in self.calls
+                     if 'action_0' in b.get('questions', {}).get('next', {}).get('criteria', {}))
+        self.assertTrue(ready['verify'])
+        self.assertIn('PREPARED_COMMAND_', ready['command_preview'])
+        self.assertLessEqual(len(ready['command_preview']), 600)
+
     def test_generation_flow_is_forwarded_without_client_model_selection(self):
         flow = ['flow', {'fixture': 'router owns routing'}]
         result = self.run_agent(extra={'flow_ir': flow})
@@ -270,6 +297,78 @@ class DecisionLoopTest(unittest.TestCase):
         self.assertEqual(chat['flow_ir'], flow)
         self.assertNotIn('model', chat)
         self.assertTrue(all('flow_ir' not in b for p, b in self.calls if p == '/v1/decisions'))
+
+    def test_controller_selects_economy_or_capable_without_another_routing_decision(self):
+        generations = []
+        def generate(body):
+            generations.append(body)
+            if len(generations) == 1:
+                return {'actions': [{'description': 'inspect', 'command': 'printf observed'}], 'answer': None}
+            return {'actions': [], 'answer': 'done'}
+        self.generate = generate
+        def decide(body):
+            options = body['questions']['next']['criteria']
+            choice = ('finish' if 'finish' in options else 'action_0' if 'action_0' in options else
+                      'generate_economy' if not generations else 'generate_capable')
+            return decision_reply(body, choice)
+        self.decide = decide
+        result = self.run_agent(extra={'policy_ir': ['capable']}, economy={'policy_ir': ['economy']})
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual([b['policy_ir'] for b in generations], [['economy'], ['capable']])
+        self.assertEqual([p for p, _ in self.calls], ['/v1/decisions', '/v1/chat/completions',
+                         '/v1/decisions', '/v1/decisions', '/v1/chat/completions', '/v1/decisions'])
+        self.assertTrue(all('flow_ir' not in b for _, b in self.calls))
+
+    def test_unified_generation_rejects_nested_flow_before_inference(self):
+        result = self.run_agent(extra={'flow_ir': ['flow', {}]}, economy={'policy_ir': ['economy']})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.calls)
+
+    def test_generated_discovery_reuses_procedure_with_literal_arguments(self):
+        filenames = ['first.txt', "second'$(touch INJECTED).txt"]
+        for i, name in enumerate(filenames): (self.home / name).write_text(f'evidence {i}')
+        procedure = {'description': 'Read an unread discovered file', 'repeat': True,
+            'command': 'cat -- "$1"', 'parameters': [{'description': 'Unread file path', 'values': filenames}]}
+        discovery = "python3 -c " + shlex.quote('import json,pathlib; a='+repr(procedure)+
+            '; a["parameters"][0]["values"]=sorted(p.name for p in pathlib.Path(".").glob("*.txt")); print(json.dumps([a]))')
+        generations = []
+        def generate(body):
+            generations.append(body)
+            return ({'actions': [{'description': 'Discover readable files', 'command': discovery, 'discover': True}], 'answer': None}
+                    if len(generations) == 1 else {'actions': [], 'answer': 'read both'})
+        self.generate = generate
+        reads = 0
+        def decide(body):
+            nonlocal reads
+            if 'action_0_arg_0' not in body['questions']: return decision_reply(body)
+            if reads == 2: return decision_reply(body, 'generate')
+            reply = decision_reply(body, 'action_0')
+            arg = reply['answers']['action_0_arg_0']; pick = f'value_{reads}'
+            arg['choice'] = pick; arg['probabilities'] = {k: float(k == pick) for k in arg['probabilities']}
+            reads += 1
+            return reply
+        self.decide = decide
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(len(generations), 2)  # bootstrap once, final content once; no generation between reads
+        self.assertEqual(reads, 2)
+        self.assertFalse((self.home / 'INJECTED').exists())
+        self.assertIn('evidence 0', str(generations[-1]['messages']))
+        self.assertIn('evidence 1', str(generations[-1]['messages']))
+        self.assertEqual(sum(m['role'] == 'tool' for m in self.archive()), 3)
+
+    def test_invalid_selected_argument_cannot_execute_command(self):
+        self.generate = lambda _: {'actions': [{'description': 'parameter fixture', 'command': 'touch forbidden',
+            'parameters': [{'description': 'value', 'values': ['one', 'two']}]}], 'answer': None}
+        def decide(body):
+            reply = decision_reply(body)
+            if 'action_0_arg_0' in reply['answers']:
+                reply['answers']['action_0_arg_0']['choice'] = 'invented_value'
+            return reply
+        self.decide = decide
+        result = self.run_agent()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.home / 'forbidden').exists())
 
     def test_provider_configuration_is_scrubbed_from_selected_shell(self):
         (self.skills / 'actions.json').write_text(json.dumps([{'description': 'verify scrubbed environment',
