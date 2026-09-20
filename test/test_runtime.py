@@ -56,6 +56,8 @@ class RuntimeTest(unittest.TestCase):
                 else:
                     case.requests.append(body)
                     response, status = case.chat(body), 200
+                    if isinstance(response, tuple):
+                        status, response = response
                 payload = json.dumps(response).encode()
                 try:
                     self.send_response(status)
@@ -136,7 +138,7 @@ class RuntimeTest(unittest.TestCase):
         self.assertIn("context compacted", self.log())
 
     def test_failed_compaction_retries_without_losing_history(self):
-        self.compact_status = 503
+        self.compact_status = 400
         self.release_compact.set()
         self.chat = lambda body: answer(compact=True)
         self.turn("first")
@@ -146,6 +148,12 @@ class RuntimeTest(unittest.TestCase):
         self.assertIn(b"sealed-ok", self.turn("second"))
         self.assertGreaterEqual(len(self.compactions), 2)
         self.assertIn("compaction failed; history retained", self.log())
+
+    def test_transient_chat_timeout_retries_identical_request(self):
+        self.chat = lambda body: (504, {'error': {'message': 'deadline exceeded'}}) if len(self.requests) == 1 else answer('recovered')
+        self.assertIn(b'recovered', self.turn('finish this task'))
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(self.requests[0], self.requests[1])
 
     def test_snapshot_has_paired_tools_and_finish_alias_runs_tool(self):
         def chat(body):

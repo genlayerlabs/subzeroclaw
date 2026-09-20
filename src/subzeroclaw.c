@@ -22,6 +22,9 @@ typedef struct {
     char api_key[MAX_VALUE], endpoint[MAX_VALUE];
     char skills_dir[MAX_PATH], log_dir[MAX_PATH];
     char request_extra[MAX_EXTRA];   /* the loop JSON: model + routing policy_ir */
+    char decision_extra[MAX_EXTRA];  /* nonempty enables typed decision control */
+    char economy_extra[MAX_EXTRA];   /* optional direct economical generation policy */
+    int decision_context_bytes;
     char compact_extra[MAX_EXTRA];   /* the compaction JSON: keep_recent + seal policy_ir */
     char session[MAX_VALUE];   /* runtime per-run id (sid); sent so the router can
                                   keep this conversation pinned to its cache-hot peer */
@@ -34,6 +37,9 @@ static void config_parse_line(Config *cfg, const char *key, const char *val) {
     else if (!strcmp(key, "skills_dir"))   snprintf(cfg->skills_dir, MAX_PATH,  "%s", val);
     else if (!strcmp(key, "log_dir"))      snprintf(cfg->log_dir,    MAX_PATH,  "%s", val);
     else if (!strcmp(key, "request_extra")) snprintf(cfg->request_extra, MAX_EXTRA, "%s", val);
+    else if (!strcmp(key, "decision_extra")) snprintf(cfg->decision_extra, MAX_EXTRA, "%s", val);
+    else if (!strcmp(key, "economy_extra")) snprintf(cfg->economy_extra, MAX_EXTRA, "%s", val);
+    else if (!strcmp(key, "decision_context_bytes")) cfg->decision_context_bytes = atoi(val);
     else if (!strcmp(key, "compact_extra")) snprintf(cfg->compact_extra, MAX_EXTRA, "%s", val);
     else if (!strcmp(key, "max_turns"))    cfg->max_turns    = atoi(val);
 }
@@ -46,12 +52,13 @@ int config_load(Config *cfg) {
     snprintf(cfg->skills_dir, MAX_PATH,  "%s/.subzeroclaw/skills", home);
     snprintf(cfg->log_dir,    MAX_PATH,  "%s/.subzeroclaw/logs", home);
     cfg->max_turns = 200;
+    cfg->decision_context_bytes = 18000;
 
     char path[MAX_PATH];
     snprintf(path, MAX_PATH, "%s/.subzeroclaw/config", home);
     FILE *f = fopen(path, "r");
     if (f) {
-        char line[2048];
+        char line[MAX_EXTRA + 128];
         while (fgets(line, sizeof(line), f)) {
             size_t len = strlen(line);
             while (len && strchr("\n\r ", line[len - 1])) line[--len] = '\0';
@@ -75,6 +82,8 @@ int config_load(Config *cfg) {
        swarm loads its OWN configured skill instead of the host default. */
     if ((v = getenv("SUBZEROCLAW_SKILLS"))) snprintf(cfg->skills_dir, MAX_PATH, "%s", v);
     if ((v = getenv("SUBZEROCLAW_REQUEST_EXTRA"))) snprintf(cfg->request_extra, MAX_EXTRA, "%s", v);
+    if ((v = getenv("SUBZEROCLAW_DECISION_EXTRA"))) snprintf(cfg->decision_extra, MAX_EXTRA, "%s", v);
+    if ((v = getenv("SUBZEROCLAW_ECONOMY_EXTRA"))) snprintf(cfg->economy_extra, MAX_EXTRA, "%s", v);
     if ((v = getenv("SUBZEROCLAW_COMPACT_EXTRA"))) snprintf(cfg->compact_extra, MAX_EXTRA, "%s", v);
     if (!cfg->api_key[0]) { fprintf(stderr, "error: no api_key\n"); return -1; }
 
@@ -90,7 +99,7 @@ int config_load(Config *cfg) {
     {
         static const char *const secret_vars[] = {
             "SUBZEROCLAW_API_KEY", "SUBZEROCLAW_ENDPOINT",
-            "SUBZEROCLAW_REQUEST_EXTRA", "SUBZEROCLAW_COMPACT_EXTRA"
+            "SUBZEROCLAW_REQUEST_EXTRA", "SUBZEROCLAW_COMPACT_EXTRA", "SUBZEROCLAW_DECISION_EXTRA", "SUBZEROCLAW_ECONOMY_EXTRA"
         };
         for (size_t i = 0; i < sizeof(secret_vars) / sizeof(secret_vars[0]); i++) {
             char *p = getenv(secret_vars[i]);
@@ -117,16 +126,20 @@ static void log_write(FILE *log, const char *role, const char *content) {
     fprintf(log, "[%s] %s: %s\n", ts, role, content); fflush(log);
 }
 
+static char *read_file(const char *path);
+
 static char *http_post(const char *url, const char *api_key, const char *session,
-                       const char *body, const char *work_dir) {
+                       const char *body, const char *work_dir, int *http_status) {
     /* A compaction's parent owns its directory and can clean it on cancellation.
        Ordinary requests own their own private directory. No config enters a shell. */
     char own_dir[] = "/tmp/.szc_http_XXXXXX";
+    if (http_status) *http_status = 0;
     if (strpbrk(api_key, "\r\n") || (session && strpbrk(session, "\r\n"))) return NULL;
     if (!work_dir) { if (!mkdtemp(own_dir)) return NULL; work_dir = own_dir; }
-    char body_path[128], hdr_path[128], body_arg[130], hdr_arg[130];
+    char body_path[128], hdr_path[128], reply_path[128], body_arg[130], hdr_arg[130];
     snprintf(body_path, sizeof(body_path), "%s/body", work_dir);
     snprintf(hdr_path, sizeof(hdr_path), "%s/headers", work_dir);
+    snprintf(reply_path, sizeof(reply_path), "%s/response", work_dir);
     char *buf = NULL;
     char hdr[2 * MAX_VALUE + 128];
     /* The unhardcoded router pins cache affinity AND meters per-session
@@ -138,8 +151,8 @@ static char *http_post(const char *url, const char *api_key, const char *session
                  api_key, session);
     else
         snprintf(hdr, sizeof(hdr), "Authorization: Bearer %s\n", api_key);
-    const char *paths[] = {body_path, hdr_path}, *data[] = {body, hdr};
-    for (int i = 0; i < 2; i++) {
+    const char *paths[] = {body_path, hdr_path, reply_path}, *data[] = {body, hdr, ""};
+    for (int i = 0; i < 3; i++) {
         int fd = open(paths[i], O_WRONLY | O_CREAT | O_EXCL, 0600);
         if (fd < 0) goto cleanup;
         FILE *f = fdopen(fd, "w");
@@ -150,41 +163,34 @@ static char *http_post(const char *url, const char *api_key, const char *session
     }
     snprintf(body_arg, sizeof(body_arg), "@%s", body_path);
     snprintf(hdr_arg, sizeof(hdr_arg), "@%s", hdr_path);
-    int output[2];
-    if (pipe(output)) goto cleanup;
+    /* A transient gateway failure must not discard a completed tool step.
+     * curl retries the same inference request, never a shell action. A regular
+     * output file lets curl rewind partial responses before retrying. */
     fflush(NULL);
+    int code_pipe[2];
+    if (pipe(code_pipe)) goto cleanup;
     pid_t pid = fork();
     if (pid == 0) {
-        close(output[0]); dup2(output[1], STDOUT_FILENO); close(output[1]);
-        execlp("curl", "curl", "--silent", "--fail", "--max-time", "120",
+        close(code_pipe[0]); dup2(code_pipe[1], STDOUT_FILENO); close(code_pipe[1]);
+        execlp("curl", "curl", "--silent", "--show-error", "--fail",
+               "--max-time", "120", "--retry", "2", "--retry-delay", "1",
+               "--retry-max-time", "180", "--output", reply_path,
+               "--write-out", "%{http_code}",
                "--header", hdr_arg, "--header", "Content-Type: application/json",
                "--data-binary", body_arg, "--url", url, (char *)NULL);
         _exit(127);
     }
-    close(output[1]);
-    if (pid < 0) { close(output[0]); goto cleanup; }
-    FILE *fp = fdopen(output[0], "r");
-    if (!fp) { close(output[0]); kill(pid, SIGTERM); }
-
-    size_t cap = 65536, len = 0, n;
-    if (fp) buf = malloc(cap);
-    while (buf && (n = fread(buf + len, 1, cap - len - 1, fp)) > 0) {
-        len += n;
-        if (len + 1 >= cap) {
-            cap *= 2;
-            char *nb = realloc(buf, cap);
-            if (!nb) { free(buf); buf = NULL; break; }
-            buf = nb;
-        }
-    }
-    if (buf) buf[len] = '\0';
-    if (fp) fclose(fp);
+    close(code_pipe[1]);
+    if (pid < 0) { close(code_pipe[0]); goto cleanup; }
     int status = 0;
     pid_t waited;
     do { waited = waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
-    if (waited < 0 || !WIFEXITED(status) || WEXITSTATUS(status)) { free(buf); buf = NULL; }
+    char code[16] = {0};
+    if (read(code_pipe[0], code, sizeof(code) - 1) > 0 && http_status) *http_status = atoi(code);
+    close(code_pipe[0]);
+    if (waited > 0 && WIFEXITED(status) && !WEXITSTATUS(status)) buf = read_file(reply_path);
 cleanup:
-    unlink(body_path); unlink(hdr_path);
+    unlink(body_path); unlink(hdr_path); unlink(reply_path);
     if (work_dir == own_dir) rmdir(own_dir);
     return buf;
 }
@@ -333,7 +339,7 @@ static char *build_request(const Config *cfg, cJSON *msgs, cJSON *tools) {
 SZC_WEAK char *llm_chat(const Config *cfg, cJSON *msgs, cJSON *tools) {
     char *rj = build_request(cfg, msgs, tools);
     if (!rj) return NULL;
-    char *rb = http_post(cfg->endpoint, cfg->api_key, cfg->session, rj, NULL);
+    char *rb = http_post(cfg->endpoint, cfg->api_key, cfg->session, rj, NULL, NULL);
     free(rj);
     return rb;
 }
@@ -431,12 +437,13 @@ static void compact_clear(Compaction *pending) {
         char path[128];
         snprintf(path, sizeof(path), "%s/body", pending->dir); unlink(path);
         snprintf(path, sizeof(path), "%s/headers", pending->dir); unlink(path);
+        snprintf(path, sizeof(path), "%s/response", pending->dir); unlink(path);
         rmdir(pending->dir);
     }
     memset(pending, 0, sizeof(*pending));
 }
 
-static int compact_fire(const Config *cfg, cJSON *msgs, Compaction *pending) {
+static int compact_fire(const Config *cfg, cJSON *msgs, Compaction *pending, cJSON *instructions) {
     if (pending->pid) return -1;
     cJSON *req = cJSON_CreateObject();
     if (cfg->compact_extra[0]) {            /* keep_recent / policy_ir / max_tokens */
@@ -449,6 +456,25 @@ static int compact_fire(const Config *cfg, cJSON *msgs, Compaction *pending) {
             }
         }
         if (extra) cJSON_Delete(extra);
+    }
+    if (instructions) {
+        cJSON *decision = cJSON_Parse(cfg->decision_extra);
+        cJSON *policy = cJSON_GetObjectItem(decision, "policy_ir");
+        if (policy && !cJSON_GetObjectItem(req, "decision_policy_ir"))
+            cJSON_AddItemToObject(req, "decision_policy_ir", cJSON_Duplicate(policy, 1));
+        cJSON_Delete(decision);
+        /* Pin canonical user inputs, not generated observations sharing that role. */
+        cJSON *pins = cJSON_CreateArray(), *m, *original;
+        int index = 0;
+        cJSON_ArrayForEach(m, msgs) {
+            cJSON *role = cJSON_GetObjectItem(m, "role");
+            if (cJSON_IsString(role) && !strcmp(role->valuestring, "user"))
+                cJSON_ArrayForEach(original, instructions)
+                    if (cJSON_Compare(m, original, 1)) { cJSON_AddItemToArray(pins, cJSON_CreateNumber(index)); break; }
+            index++;
+        }
+        cJSON_DeleteItemFromObjectCaseSensitive(req, "pinned_indices");
+        cJSON_AddItemToObject(req, "pinned_indices", pins);
     }
     cJSON_AddItemReferenceToObject(req, "messages", msgs);
     char *body = cJSON_PrintUnformatted(req);
@@ -465,7 +491,7 @@ static int compact_fire(const Config *cfg, cJSON *msgs, Compaction *pending) {
     if (pid == 0) {
         setpgid(0, 0);
         char url[MAX_VALUE + 16]; compact_url(cfg, url, sizeof(url));
-        char *reply = http_post(url, cfg->api_key, cfg->session, body, pending->dir);
+        char *reply = http_post(url, cfg->api_key, cfg->session, body, pending->dir, NULL);
         FILE *f = reply ? fopen(pending->result_path, "w") : NULL;
         int ok = 0;
         if (f) { ok = fputs(reply, f) >= 0; if (fclose(f)) ok = 0; }
@@ -493,8 +519,15 @@ static void compact_splice(cJSON *msgs, int snapshot_len, const char *res_path, 
         for (int i = 0; i < snapshot_len; i++) cJSON_DeleteItemFromArray(msgs, 0);
         for (int i = cJSON_GetArraySize(sp) - 1; i >= 0; i--)
             cJSON_InsertItemInArray(msgs, 0, cJSON_Duplicate(cJSON_GetArrayItem(sp, i), 1));
-        log_write(log, "SYS", "context compacted (append-only, async)");
+        log_write(log, "SYS", cJSON_IsFalse(cJSON_GetObjectItem(root, "compacted"))
+                  ? "context retained by compactor" : "context compacted (append-only, async)");
     } else log_write(log, "SYS", "invalid compaction response; history retained");
+    const char *fields[] = {"compaction", "usage", "x_router"};
+    for (int i = 0; root && i < 3; i++) {
+        cJSON *value = cJSON_GetObjectItem(root, fields[i]);
+        char *text = value ? cJSON_PrintUnformatted(value) : NULL;
+        if (text) { log_write(log, "COMPACTION", text); free(text); }
+    }
     if (root) cJSON_Delete(root);
 }
 
@@ -568,9 +601,12 @@ static int round_has_command(cJSON *tool_calls) {
     return 0;
 }
 
+#include "decision.h"
+
 static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
                      const char *input, FILE *log, Compaction *pending)
 {
+    if (cfg->decision_extra[0]) return decision_run(cfg, msgs, input, log);
     cJSON_AddItemToArray(msgs, make_msg("user", input));
     log_write(log, "USER", input);
 
@@ -608,7 +644,7 @@ static int agent_run(const Config *cfg, cJSON *msgs, cJSON *tools,
         if (has_tool_calls) process_tool_calls(resp.tool_calls, msgs, log);
 
         if (resp.compact && !pending->pid && cfg->compact_extra[0])
-            compact_fire(cfg, msgs, pending);
+            compact_fire(cfg, msgs, pending, NULL);
 
         if (has_tool_calls) {
             response_free(&resp); continue;

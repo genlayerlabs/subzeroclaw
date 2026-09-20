@@ -133,7 +133,7 @@ static void test_turn_newline_framed_tty(void) {
 
 static void test_turn_eof_empty_is_null(void) {
     TEST("read_turn: EOF with no bytes returns NULL");
-    FILE *f = fmemopen("", 0, "r");
+    FILE *f = tmpfile(); assert(f); /* zero-sized fmemopen is not portable */
     char *r = read_turn(f, '\0');
     if (r == NULL) PASS();
     else FAIL(r);
@@ -564,10 +564,97 @@ static void test_compact_splice(void) {
     cJSON_Delete(msgs);
 }
 
+static void test_decision_contract(void) {
+    TEST("decision: typed choices cannot become commands");
+    cJSON *criteria = cJSON_Parse("{\"generate\":\"New work\",\"action_0\":\"Read\"}");
+    cJSON *reply = cJSON_Parse("{\"answers\":{\"next\":{\"type\":\"choice\",\"choice\":\"action_0\",\"probabilities\":{\"generate\":0.1,\"action_0\":0.9}}}}");
+    assert(dm_choice(reply, "next", criteria));
+    cJSON *ans = cJSON_GetObjectItem(cJSON_GetObjectItem(reply, "answers"), "next");
+    cJSON_ReplaceItemInObject(ans, "choice", cJSON_CreateString("rm -rf anything"));
+    assert(!dm_choice(reply, "next", criteria));
+    cJSON_Delete(reply); cJSON_Delete(criteria); PASS();
+}
+
+static void test_decision_dependencies(void) {
+    TEST("decision: dependencies and verification block completion");
+    cJSON *a = cJSON_Parse("[{\"description\":\"Edit\",\"command\":\"true\"},{\"description\":\"Check\",\"command\":\"true\",\"after\":[0],\"verify\":true}]");
+    int status[DM_ACTIONS] = {0};
+    assert(dm_valid_actions(a));
+    assert(dm_ready(a, 0, status) && !dm_ready(a, 1, status));
+    assert(!dm_can_finish(a, status, "Done"));
+    status[0] = -1; assert(!dm_ready(a, 1, status));
+    status[0] = 1; assert(dm_ready(a, 1, status));
+    status[1] = 1; assert(dm_can_finish(a, status, "Done"));
+    cJSON_Delete(a);
+    a = cJSON_Parse("[null]"); assert(!dm_valid_actions(a)); cJSON_Delete(a);
+    a = cJSON_Parse("[{\"description\":\"Cycle\",\"command\":\"true\",\"after\":[0]}]");
+    assert(!dm_valid_actions(a)); cJSON_Delete(a); PASS();
+}
+
+static void test_retained_procedures(void) {
+    TEST("decision: retain, replace and forget named procedures");
+    cJSON *a = cJSON_Parse("[{\"procedure\":\"read\",\"repeat\":true,\"description\":\"Read\",\"command\":\"cat old\"}]");
+    cJSON *empty = cJSON_CreateArray();
+    int status[DM_ACTIONS] = {-1};
+    assert(dm_install(&a, status, empty, NULL));
+    assert(cJSON_GetArraySize(a) == 1 && status[0] == -1 && !dm_ready(a, 0, status));
+    cJSON *update = cJSON_Parse("[{\"procedure\":\"read\",\"repeat\":true,\"description\":\"Read\",\"command\":\"cat new\"}]");
+    assert(dm_install(&a, status, update, NULL));
+    assert(cJSON_GetArraySize(a) == 1 && dm_ready(a, 0, status));
+    assert(!strcmp(dm_string(cJSON_GetArrayItem(a, 0), "command"), "cat new"));
+    cJSON *forget = cJSON_Parse("[\"read\"]");
+    assert(!dm_install(&a, status, update, forget)); /* cannot forget and replace together */
+    assert(dm_install(&a, status, empty, forget) && !cJSON_GetArraySize(a));
+    cJSON_Delete(a); cJSON_Delete(empty); cJSON_Delete(update); cJSON_Delete(forget); PASS();
+}
+
+static void test_retained_procedure_bounds(void) {
+    TEST("decision: rejected procedure merge preserves previous agenda");
+    cJSON *a = cJSON_Parse("[{\"procedure\":\"read\",\"repeat\":true,\"description\":\"Read\",\"command\":\"true\"}]");
+    cJSON *full = cJSON_CreateArray(), *before = a;
+    for (int i = 0; i < DM_ACTIONS; i++)
+        cJSON_AddItemToArray(full, cJSON_Parse("{\"description\":\"Step\",\"command\":\"true\"}"));
+    int status[DM_ACTIONS] = {1};
+    assert(!dm_install(&a, status, full, NULL) && a == before && status[0] == 1);
+    cJSON *invalid = cJSON_Duplicate(a, 1);
+    cJSON_AddItemToArray(invalid, cJSON_Duplicate(cJSON_GetArrayItem(a, 0), 1));
+    assert(!dm_valid_actions(invalid));
+    cJSON_DeleteItemFromArray(invalid, 1);
+    cJSON_AddItemToObject(cJSON_GetArrayItem(invalid, 0), "after", cJSON_Parse("[0]"));
+    assert(!dm_valid_actions(invalid));
+    cJSON_Delete(a); cJSON_Delete(full); cJSON_Delete(invalid); PASS();
+}
+
+static void test_decision_wire_admission(void) {
+    TEST("decision: ASCII wire size and atomic future-branch admission");
+    assert(dm_wire_size("{\"x\":\"é😀\"}") == 27);
+    assert(dm_wire_size("{\"x\":\"\x7f\"}") == 15);
+    assert(dm_wire_size("\xc0\x80") == (size_t)-1);
+    Config cfg = {0}; strcpy(cfg.decision_extra, "{\"policy_ir\":[\"fixture\"]}");
+    cJSON *messages = cJSON_CreateArray();
+    cJSON_AddItemToArray(messages, make_msg("user", "Preserve task"));
+    cJSON *actions = cJSON_Parse("[{\"description\":\"Retain\",\"command\":\"true\",\"repeat\":true,\"procedure\":\"read\"}]");
+    int status[DM_ACTIONS] = {1};
+    cJSON *proposed = cJSON_Parse("[{\"description\":\"Prepare\",\"command\":\"true\"},{\"description\":\"Later\",\"command\":\"true\",\"after\":[0],\"parameters\":[{\"description\":\"path\",\"values\":[]}]}]");
+    cJSON *values = cJSON_GetObjectItem(cJSON_GetArrayItem(cJSON_GetObjectItem(cJSON_GetArrayItem(proposed, 1), "parameters"), 0), "values");
+    char big[1501]; memset(big, 'x', 1500); big[1500] = 0;
+    for (int i = 0; i < 25; i++) cJSON_AddItemToArray(values, cJSON_CreateString(big));
+    assert(dm_valid_actions(proposed));
+    cJSON *before = actions;
+    assert(!dm_install_checked(&cfg, messages, "/archive", NULL, &actions, status, proposed, NULL));
+    assert(actions == before && status[0] == 1 && cJSON_GetArraySize(actions) == 1);
+    cJSON_Delete(proposed); cJSON_Delete(actions); cJSON_Delete(messages); PASS();
+}
+
 int main(void) {
+    test_decision_wire_admission();
     printf("\n  SubZeroClaw test suite\n");
     printf("  ═══════════════════════════════════════════\n\n");
 
+    test_decision_contract();
+    test_decision_dependencies();
+    test_retained_procedures();
+    test_retained_procedure_bounds();
     test_shell_echo();
     test_shell_pipe();
     test_shell_stderr();
