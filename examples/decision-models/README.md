@@ -12,7 +12,11 @@ No vendor or model name is compiled into the controller.
 Transient HTTP failures use curl’s bounded retry policy (at most two retries).
 The same inference request is retried; previously executed shell actions are
 not repeated. Permanent errors such as HTTP 401 are not retried. Retried
-inference can incur additional provider cost, so meter all HTTP attempts.
+inference can incur additional provider cost, so meter all HTTP attempts. After
+exhausted transient retries or an invalid decision, the controller can request
+up to two consecutive generative repairs. Permanent 4xx errors (except 408/429)
+stop. A successful shell action resets this repair allowance; `max_turns` remains
+the overall bound.
 
 ## Configure
 
@@ -42,7 +46,7 @@ cannot route a decision to a chat model. You can add `--decision-family` to pin
 an evaluated family, or replace the generated policy with your own constraints.
 
 The controller sees bounded history, commands, results and available arguments.
-An invalid decision stops without executing a command. There is no second model
+An invalid decision executes nothing and enters bounded repair. There is no second model
 routing decision after the controller chooses generation. Choosing an economical
 model is not evidence that it will solve a particular task. Provider restrictions
 belong in every applicable policy.
@@ -60,7 +64,10 @@ The equivalent environment variables are `SUBZEROCLAW_DECISION_EXTRA` and
 `SUBZEROCLAW_ECONOMY_EXTRA`. They are scrubbed before shell execution, like the existing inference configuration.
 `max_turns` bounds controller iterations, including repeated generation attempts.
 There are at most 24 proposed actions; requests exceeding the router's 32,000-byte
-limit fail before inference, rather than silently losing instructions.
+limit are rejected before decision inference. Admission includes JSON ASCII
+escaping, pinned instructions, retained procedures and argument branches behind
+dependencies. A rejected generation/discovery leaves the old catalog intact and
+requests a smaller plan. Oversized initial instructions stop before any inference.
 
 ## Action contract
 
@@ -80,8 +87,9 @@ The runtime tells the generative model to return an agenda:
 unlock an action. Ordinary actions execute at most once per agenda. A failed action
 blocks its dependents and invalidates the proposed answer. Replanning replaces
 the agenda; the generation prompt requires unresolved checks to be retained.
-The controller cannot finish while any declared verification action is pending
-or has failed. It also evaluates whether the proposed answer is supported by the
+The controller cannot finish while any ordinary action is pending or any action
+has failed. Further non-verification shell work invalidates previous successful
+checks, so they must run again against the resulting state. It also evaluates whether the proposed answer is supported by the
 observations. These mechanisms do not prove that the proposed checks are complete.
 
 A reusable procedure adds `repeat: true` and optional positional parameters:
@@ -102,13 +110,15 @@ with shell quoting, never text substitution into code. Procedures must quote
 parameter expansions and must not `eval` them. Parameters are independent: use
 a single compound candidate when values must remain coupled. There are at most
 4 parameters per action, 31 total per agenda, and 31 values per parameter.
-An unavailable or malformed selected argument executes nothing and stops.
+An unavailable or malformed selected argument executes nothing, disables that
+action and requests fresh candidates through bounded generative repair.
 
 A successful repeatable procedure remains available with fresh arguments;
 a failed one requires replanning. `repeat` cannot be combined with `verify`.
 Execution history records the actual bound command, so the controller can avoid
-repeating work. A new generation or discovery replaces the agenda, including
-procedures: retain any procedures that are still useful in the replacement.
+repeating work. Three consecutive identical commands with identical captured
+results disable the stalled action and request repair. Named procedures survive
+agenda replacement as described below; unnamed procedures do not.
 
 No task-specific action catalog is required. Start with an empty agenda; a
 generation can prepare a discovery command that enumerates the actual environment
@@ -153,14 +163,29 @@ transcript, so pruning a proposal message cannot erase unfinished work.
 
 Decision calls receive explicit excerpts of large observations. The generator
 retains its exact prompts and text responses, appending execution observations with
-the action description, bound arguments and full result. Commands occur once in
+the action description, bound arguments and at most about 6 KB of result (head
+and tail, explicitly marked when shortened). The decision view uses about 1.5 KB
+of each result, preserving structured arguments and evidence IDs. Commands occur once in
 their generated plan; the archive records every full command actually executed.
-The decision view keeps a command-free plan summary. Both receive the archive path
+The decision view omits duplicate plan summaries. Both receive the archive path
 for recovering evidence. Selection starts when the **decision view** exceeds
 `decision_context_bytes` (4,096–24,000; default 18,000) and is a synchronous,
 bounded decision request. It is not the old asynchronous text-summary seal.
 `compact_extra` also applies to the generator in decision mode: a router context
 pressure signal can request a separate asynchronous seal of its transcript.
+
+When `decision_extra` supplies `policy_ir`, the seal also sends that policy as
+`decision_policy_ir` plus the indexes of genuine user inputs to pin. A router
+supporting fragment compaction classifies complete aged units as keep, summarize
+or archive, batches only the selected fragments into the summarizer policy, and
+reassembles them in order. System/developer instructions, genuine user input and
+the recent tail remain verbatim; tool-call/result groups stay together.
+`compact_extra.target_ratio` defaults to 0.1 of serialized UTF-8 bytes, not model
+tokens. Oversized or failed summaries retain the original unit. If protected or
+kept evidence prevents 10%, the response reports `target_met:false` and the actual
+sizes; those metrics and inference costs appear in the session log. Originals
+remain in the local archive. An older router ignores these additive fields and
+uses its existing seal; the fragment feature requires the router update.
 
 Decision selection does not rewrite the generator's history or cache prefix.
 Only a separate generative seal can replace that history. Prefix preservation

@@ -149,7 +149,8 @@ class DecisionLoopTest(unittest.TestCase):
         result = self.run_agent()
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.home / 'forbidden').exists())
-        self.assertEqual(len(self.calls), 1)
+        self.assertEqual([p for p, _ in self.calls].count('/v1/decisions'), 3)
+        self.assertEqual([p for p, _ in self.calls].count('/v1/chat/completions'), 2)
 
     def test_transient_decision_failure_does_not_repeat_a_tool(self):
         (self.skills / 'actions.json').write_text(json.dumps([
@@ -183,8 +184,11 @@ class DecisionLoopTest(unittest.TestCase):
         self.decide = lambda _: (503, {'error': {'message': 'unavailable'}})
         result = self.run_agent()
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(len(self.calls), 3)
-        self.assertTrue(all(b == self.calls[0][1] for _, b in self.calls))
+        decisions = [b for p, b in self.calls if p == '/v1/decisions']
+        self.assertEqual(len(decisions), 9)  # three transport attempts, two bounded repairs
+        self.assertEqual(sum(p == '/v1/chat/completions' for p, _ in self.calls), 2)
+        for start in range(0, 9, 3):
+            self.assertEqual(decisions[start:start + 3], [decisions[start]] * 3)
 
     def test_invalid_plan_does_not_execute_embedded_commands(self):
         self.config.write_text('max_turns=3\n')
@@ -338,7 +342,12 @@ class DecisionLoopTest(unittest.TestCase):
         result = self.run_agent()
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(len(generations), 2)
-        self.assertGreater(len(json.dumps(generations[1]['messages'])), 13000)
+        observation = next(json.loads(m['content']) for m in generations[1]['messages']
+                           if 'execution_observation' in m.get('content', '') and m['role'] == 'user')
+        self.assertLess(len(observation['result']), 6100)
+        self.assertTrue(observation['excerpt'])
+        self.assertIn('see archive', observation['result'])
+        self.assertTrue(any('x' * 13000 in m.get('content', '') for m in self.archive()))
         self.assertFalse(any('questions' in b and 'next' not in b['questions'] for _, b in self.calls))
 
     def test_generator_seal_uses_router_signal_and_preserves_later_observations(self):
@@ -359,12 +368,77 @@ class DecisionLoopTest(unittest.TestCase):
         seals = [b for p, b in self.calls if p == '/v1/compact']
         self.assertEqual(len(seals), 1)
         self.assertEqual(seals[0]['policy_ir'], ['generator-seal'])
+        self.assertEqual(seals[0]['decision_policy_ir'], ['decision-fixture'])
+        self.assertTrue(any(seals[0]['messages'][i]['content'] == 'Preserve original requirement.'
+                            for i in seals[0]['pinned_indices']))
         history = str(generations[1]['messages'])
         self.assertIn('SEALED_GENERATION_HISTORY', history)
         self.assertIn('OBSERVED_AFTER_SNAPSHOT', history)
         self.assertIn('Preserve original requirement.', history)
         last = [b for _, b in self.calls if 'next' in b.get('questions', {})][-1]
         self.assertNotIn('SEALED_GENERATION_HISTORY', str(last['state']))
+
+    def test_oversized_catalog_is_repaired_before_a_decision_or_execution(self):
+        generations = []
+        def generate(body):
+            generations.append(body)
+            if len(generations) == 1:
+                return {'actions': [{'description': 'too many long candidates', 'command': 'touch forbidden',
+                    'parameters': [{'description': 'path', 'values': ['😀' * 250 + str(i) for i in range(20)]}]}], 'answer': 'bad'}
+            self.assertIn('oversized', str(body['messages']))
+            return {'actions': [{'description': 'verify no execution', 'command': 'test ! -e forbidden', 'verify': True}], 'answer': 'repaired'}
+        self.generate = generate
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(len(generations), 2)
+        self.assertFalse((self.home / 'forbidden').exists())
+        decisions = [b for p, b in self.calls if p == '/v1/decisions']
+        self.assertTrue(all(len(json.dumps(b).encode()) <= 32000 for b in decisions))
+        self.assertFalse(any('too many long candidates' in str(b) for b in decisions))
+
+    def test_unavailable_parameter_repairs_without_running_bad_candidate(self):
+        (self.skills / 'actions.json').write_text(json.dumps([{'description': 'stale file',
+            'command': 'touch forbidden', 'parameters': [{'description': 'path', 'values': ['gone']}]}]))
+        def decide(body):
+            reply = decision_reply(body)
+            for name, q in body['questions'].items():
+                if name != 'next':
+                    reply['answers'][name] = {'type': 'choice', 'choice': 'unavailable',
+                        'probabilities': {k: float(k == 'unavailable') for k in q['criteria']}}
+            return reply
+        self.decide = decide
+        self.generate = lambda body: {'actions': [{'description': 'fresh verification',
+            'command': 'test ! -e forbidden', 'verify': True}], 'answer': 'recovered'}
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertFalse((self.home / 'forbidden').exists())
+        self.assertEqual(sum(p == '/v1/chat/completions' for p, _ in self.calls), 1)
+
+    def test_work_after_verification_requires_a_fresh_check(self):
+        self.generate = lambda _: {'actions': [
+            {'description': 'reusable mutation', 'command': 'printf x >> data', 'repeat': True},
+            {'description': 'verify current state', 'command': 'test -s data && printf v >> checks', 'verify': True}], 'answer': 'verified'}
+        sequence = iter(['action_0', 'action_1', 'action_0', 'action_1', 'finish'])
+        def decide(body):
+            choice = next(sequence)
+            if choice == 'action_1':
+                self.assertNotIn('finish', body['questions']['next']['criteria'])
+            return decision_reply(body, choice)
+        self.decide = decide
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual((self.home / 'data').read_text(), 'xx')
+        self.assertEqual((self.home / 'checks').read_text(), 'vv')
+
+    def test_identical_repeated_observation_requests_repair(self):
+        (self.skills / 'actions.json').write_text(json.dumps([{'description': 'stalled read',
+            'procedure': 'read', 'repeat': True, 'command': 'printf unchanged'}]))
+        self.generate = lambda body: {'actions': [], 'forget': ['read'], 'answer': 'no more work'}
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(len([m for m in self.archive() if m['role'] == 'tool']), 3)
+        chat = next(b for p, b in self.calls if p == '/v1/chat/completions')
+        self.assertIn('repeated three times', str(chat))
 
     def test_generation_flow_is_forwarded_without_client_model_selection(self):
         flow = ['flow', {'fixture': 'router owns routing'}]

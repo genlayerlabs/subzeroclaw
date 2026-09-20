@@ -625,7 +625,29 @@ static void test_retained_procedure_bounds(void) {
     cJSON_Delete(a); cJSON_Delete(full); cJSON_Delete(invalid); PASS();
 }
 
+static void test_decision_wire_admission(void) {
+    TEST("decision: ASCII wire size and atomic future-branch admission");
+    assert(dm_wire_size("{\"x\":\"é😀\"}") == 27);
+    assert(dm_wire_size("{\"x\":\"\x7f\"}") == 15);
+    assert(dm_wire_size("\xc0\x80") == (size_t)-1);
+    Config cfg = {0}; strcpy(cfg.decision_extra, "{\"policy_ir\":[\"fixture\"]}");
+    cJSON *messages = cJSON_CreateArray();
+    cJSON_AddItemToArray(messages, make_msg("user", "Preserve task"));
+    cJSON *actions = cJSON_Parse("[{\"description\":\"Retain\",\"command\":\"true\",\"repeat\":true,\"procedure\":\"read\"}]");
+    int status[DM_ACTIONS] = {1};
+    cJSON *proposed = cJSON_Parse("[{\"description\":\"Prepare\",\"command\":\"true\"},{\"description\":\"Later\",\"command\":\"true\",\"after\":[0],\"parameters\":[{\"description\":\"path\",\"values\":[]}]}]");
+    cJSON *values = cJSON_GetObjectItem(cJSON_GetArrayItem(cJSON_GetObjectItem(cJSON_GetArrayItem(proposed, 1), "parameters"), 0), "values");
+    char big[1501]; memset(big, 'x', 1500); big[1500] = 0;
+    for (int i = 0; i < 25; i++) cJSON_AddItemToArray(values, cJSON_CreateString(big));
+    assert(dm_valid_actions(proposed));
+    cJSON *before = actions;
+    assert(!dm_install_checked(&cfg, messages, "/archive", NULL, &actions, status, proposed, NULL));
+    assert(actions == before && status[0] == 1 && cJSON_GetArraySize(actions) == 1);
+    cJSON_Delete(proposed); cJSON_Delete(actions); cJSON_Delete(messages); PASS();
+}
+
 int main(void) {
+    test_decision_wire_admission();
     printf("\n  SubZeroClaw test suite\n");
     printf("  ═══════════════════════════════════════════\n\n");
 
