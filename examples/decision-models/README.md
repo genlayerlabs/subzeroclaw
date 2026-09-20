@@ -131,24 +131,26 @@ are arbitrary shell commands with the existing process privileges.
 ## Context and compaction
 
 Every conversation message is flushed to a private `<session>.events.jsonl`
-archive before selection. The active transcript can then discard complete older
+archive before selection. A separate decision view can then discard complete older
 assistant/tool-result units chosen by the decision model. System/user messages
 and the recent tail remain pinned; invalid selections preserve all history.
 The current agenda, dependency results and proposed answer live outside the
 transcript, so pruning a proposal message cannot erase unfinished work.
 
-Decision calls receive explicit excerpts of large observations; generation
-receives the active full messages. Both receive the archive path. Full generated plans are archived immediately;
-the active transcript keeps a command-free plan summary, because executed commands
-are already recorded in tool calls. The generation contract forms a stable prefix. A generated
-shell read can recover omitted evidence. Selection starts at
+Decision calls receive explicit excerpts of large observations. The generator
+retains its exact prompts and text responses, appending execution observations with
+the action description, bound arguments and full result. Commands occur once in
+their generated plan; the archive records every full command actually executed.
+The decision view keeps a command-free plan summary. Both receive the archive path
+for recovering evidence. Selection starts when the **decision view** exceeds
 `decision_context_bytes` (4,096–24,000; default 18,000) and is a synchronous,
 bounded decision request. It is not the old asynchronous text-summary seal.
-`compact_extra` applies to the original generative loop, not this selection mode.
+`compact_extra` also applies to the generator in decision mode: a router context
+pressure signal can request a separate asynchronous seal of its transcript.
 
-This first implementation compacts by selection; it does not automatically
-rewrite evidence into a generated summary. It does not preserve prompt-cache
-prefix identity when selecting out older units. If pinned instructions alone
+Decision selection does not rewrite the generator's history or cache prefix.
+Only a separate generative seal can replace that history. Prefix preservation
+permits provider caching but does not guarantee a cache hit. If pinned instructions alone
 exceed the decision API budget, the run stops with history intact. There is no
 claim of unlimited context, guaranteed speedup, or measured model quality.
 

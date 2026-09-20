@@ -38,6 +38,8 @@ class DecisionLoopTest(unittest.TestCase):
         self.decide = decision_reply
         self.generate = lambda body: {'actions': [], 'answer': 'done'}
         self.finish_reason = 'stop'
+        self.signal_compact = False
+        self.compact = lambda body: {'messages': body['messages']}
         case = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -50,10 +52,14 @@ class DecisionLoopTest(unittest.TestCase):
                 case.headers.append(dict(self.headers))
                 if self.path == '/v1/decisions':
                     data = case.decide(body)
+                elif self.path == '/v1/compact':
+                    data = case.compact(body)
                 else:
                     plan = case.generate(body)
                     data = {'choices': [{'finish_reason': case.finish_reason, 'message': {
                         'role': 'assistant', 'content': plan if isinstance(plan, str) else json.dumps(plan)}}]}
+                    if case.signal_compact:
+                        data['x_router'] = {'compact': True}
                 status = 200
                 if isinstance(data, tuple):
                     status, data = data
@@ -280,9 +286,11 @@ class DecisionLoopTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(len(generations), 2)
         history = generations[-1]['messages']
-        self.assertFalse(any('PREPARED_COMMAND_' in (m.get('content') or '')
-                             for m in history if m['role'] == 'assistant'))
-        self.assertTrue(any(marker in str(m.get('tool_calls', [])) for m in history))
+        self.assertEqual(sum(marker in (m.get('content') or '') for m in history), 1)
+        self.assertTrue(any(marker in (m.get('content') or '')
+                            for m in history if m['role'] == 'assistant'))
+        self.assertFalse(any(m.get('tool_calls') for m in history))
+        self.assertEqual(history[:len(generations[0]['messages'])], generations[0]['messages'])
         self.assertTrue(any(marker in (m.get('content') or '')
                             for m in self.archive() if m['role'] == 'assistant'))
         ready = next(b['state']['actions'][0] for _, b in self.calls
@@ -290,6 +298,69 @@ class DecisionLoopTest(unittest.TestCase):
         self.assertTrue(ready['verify'])
         self.assertIn('PREPARED_COMMAND_', ready['command_preview'])
         self.assertLessEqual(len(ready['command_preview']), 600)
+
+    def test_decision_pruning_preserves_generator_prefix_and_evidence(self):
+        generations = []
+        plan = {'actions': [
+            {'description': f'observe {i}',
+             'command': "printf '" + f'RETAIN_FOR_GENERATOR_{i}_' + 'x' * 1700 + "'",
+             'after': [i-1] if i else []} for i in range(5)], 'answer': None}
+        def generate(body):
+            generations.append(body)
+            return plan if len(generations) == 1 else {'actions': [], 'answer': 'done'}
+        self.generate = generate
+        result = self.run_agent('Preserve this task exactly.')
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(len(generations), 2)
+        self.assertTrue(any('questions' in b and 'next' not in b['questions'] for _, b in self.calls))
+        before, after = (b['messages'] for b in generations)
+        self.assertEqual(after[:len(before)], before)
+        self.assertEqual(json.loads(after[len(before)]['content']), plan)
+        observations = [json.loads(m['content']) for m in after
+                        if m['role'] == 'user' and m['content'].startswith('{')]
+        for i in range(5):
+            self.assertTrue(any(f'RETAIN_FOR_GENERATOR_{i}_' + 'x' * 1700 in o.get('result', '')
+                                for o in observations))
+
+    def test_long_generation_history_does_not_trigger_decision_pruning(self):
+        self.config.write_text('max_turns=10\ndecision_context_bytes=6000\n')
+        generations = []
+        def generate(body):
+            generations.append(body)
+            return ({'actions': [{'description': 'read a large observation',
+                     'command': "python3 -c 'print(\"x\" * 13000)'"}], 'answer': None}
+                    if len(generations) == 1 else {'actions': [], 'answer': 'done'})
+        self.generate = generate
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(len(generations), 2)
+        self.assertGreater(len(json.dumps(generations[1]['messages'])), 13000)
+        self.assertFalse(any('questions' in b and 'next' not in b['questions'] for _, b in self.calls))
+
+    def test_generator_seal_uses_router_signal_and_preserves_later_observations(self):
+        self.config.write_text('max_turns=10\ndecision_context_bytes=24000\n'
+                              'compact_extra={"policy_ir":["generator-seal"],"keep_recent":4}\n')
+        generations = []
+        self.compact = lambda body: {'messages': body['messages'][:3] + [
+            {'role': 'system', 'content': 'SEALED_GENERATION_HISTORY'}]}
+        def generate(body):
+            generations.append(body)
+            self.signal_compact = len(generations) == 1
+            return ({'actions': [{'description': 'observe after seal snapshot',
+                                 'command': 'sleep 0.2; printf OBSERVED_AFTER_SNAPSHOT'}], 'answer': None}
+                    if self.signal_compact else {'actions': [], 'answer': 'done'})
+        self.generate = generate
+        result = self.run_agent('Preserve original requirement.')
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        seals = [b for p, b in self.calls if p == '/v1/compact']
+        self.assertEqual(len(seals), 1)
+        self.assertEqual(seals[0]['policy_ir'], ['generator-seal'])
+        history = str(generations[1]['messages'])
+        self.assertIn('SEALED_GENERATION_HISTORY', history)
+        self.assertIn('OBSERVED_AFTER_SNAPSHOT', history)
+        self.assertIn('Preserve original requirement.', history)
+        last = [b for _, b in self.calls if 'next' in b.get('questions', {})][-1]
+        self.assertNotIn('SEALED_GENERATION_HISTORY', str(last['state']))
 
     def test_generation_flow_is_forwarded_without_client_model_selection(self):
         flow = ['flow', {'fixture': 'router owns routing'}]
