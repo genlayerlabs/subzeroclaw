@@ -194,7 +194,7 @@ static int dm_archive(FILE *archive, cJSON *msgs, int *written) {
 /* Select whole conversation units. Instructions and the latest complete unit
  * are pinned. Validate every answer before removing anything. The JSONL archive
  * is already flushed, so an excluded unit remains recoverable through shell. */
-static int dm_compact(const Config *cfg, cJSON *msgs, cJSON *state, FILE *log) {
+static int dm_compact(const Config *cfg, cJSON *msgs, cJSON *state, int *cursor, FILE *log) {
     int starts[24], lengths[24], count = 0, n = cJSON_GetArraySize(msgs);
     cJSON *questions = cJSON_CreateObject();
     cJSON *selection = cJSON_CreateObject(), *pinned = cJSON_CreateArray(), *candidates = cJSON_CreateArray();
@@ -207,7 +207,8 @@ static int dm_compact(const Config *cfg, cJSON *msgs, cJSON *state, FILE *log) {
     cJSON_AddItemToObject(selection, "instructions", pinned);
     cJSON_AddItemToObject(selection, "candidates", candidates);
     cJSON_AddItemToObject(selection, "actions", cJSON_Duplicate(cJSON_GetObjectItem(state, "actions"), 1));
-    for (int i = 1; i < n - 2 && count < 8; ) {
+    int i = *cursor;
+    for (; i < n - 2 && count < 8; ) {
         cJSON *m = cJSON_GetArrayItem(msgs, i);
         const char *role = dm_string(m, "role");
         int len = 1;
@@ -236,6 +237,7 @@ static int dm_compact(const Config *cfg, cJSON *msgs, cJSON *state, FILE *log) {
         }
         i += len;
     }
+    *cursor = i;
     if (!count) { cJSON_Delete(questions); cJSON_Delete(selection); return 0; }
     cJSON *reply = dm_request(cfg, selection, questions, log);
     cJSON_Delete(selection);
@@ -254,7 +256,9 @@ static int dm_compact(const Config *cfg, cJSON *msgs, cJSON *state, FILE *log) {
     log_write(log, "MEMORY", valid ? "selection complete; excluded units retained in archive" :
               "invalid selection; history retained");
     cJSON_Delete(reply); cJSON_Delete(questions);
-    return removed;
+    /* Deletions shift the unvisited tail; retained units must not starve it. */
+    *cursor -= removed;
+    return valid ? removed : -1;
 }
 
 static const char DM_GENERATE[] =
@@ -298,18 +302,21 @@ static int decision_run(const Config *cfg, cJSON *msgs, const char *input, FILE 
     for (int turn = 0; turn < cfg->max_turns; turn++) {
         if (dm_archive(archive, msgs, &written)) break;
         cJSON *state = dm_state(msgs, actions, status, answer, path);
-        char *serialized = cJSON_PrintUnformatted(state);
-        if (!serialized) { cJSON_Delete(state); break; }
-        size_t size = strlen(serialized); free(serialized);
-        char *full_history = cJSON_PrintUnformatted(msgs);
-        size_t history_size = full_history ? strlen(full_history) : 0;
-        free(full_history);
-        int n = cJSON_GetArraySize(msgs);
-        if ((history_size > (size_t)cfg->decision_context_bytes || size > (size_t)cfg->decision_context_bytes) && n != compact_at) {
-            dm_compact(cfg, msgs, state, log);
-            compact_at = cJSON_GetArraySize(msgs); written = compact_at;
+        int cursor = 1, n = cJSON_GetArraySize(msgs);
+        while (n != compact_at && cursor < cJSON_GetArraySize(msgs) - 2) {
+            char *serialized = cJSON_PrintUnformatted(state);
+            char *full_history = cJSON_PrintUnformatted(msgs);
+            int fits = serialized && full_history &&
+                strlen(serialized) <= (size_t)cfg->decision_context_bytes &&
+                strlen(full_history) <= (size_t)cfg->decision_context_bytes;
+            int allocated = serialized && full_history;
+            free(serialized); free(full_history);
+            if (!allocated || fits) break;
+            if (dm_compact(cfg, msgs, state, &cursor, log) < 0) break;
+            written = cJSON_GetArraySize(msgs);
             cJSON_Delete(state); state = dm_state(msgs, actions, status, answer, path);
         }
+        compact_at = cJSON_GetArraySize(msgs);
         cJSON *criteria = cJSON_CreateObject();
         cJSON_AddStringToObject(criteria, "generate", "Need a new plan, command, code, explanation, recovery, or final response");
         if (dm_can_finish(actions, status, answer))

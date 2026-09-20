@@ -159,6 +159,56 @@ class DecisionLoopTest(unittest.TestCase):
         self.assertTrue(all(len(json.dumps(b, separators=(',', ':')).encode()) <= 32000
                             for p, b in self.calls if p == '/v1/decisions'))
 
+    def test_memory_selection_reaches_units_after_a_retained_batch(self):
+        (self.skills / 'actions.json').write_text(json.dumps([
+            {'description': f'observe {i}', 'command': "printf '" + f'OBS_{i}_' + 'x' * 500 + "'",
+             'after': [i-1] if i else []} for i in range(12)]))
+
+        def decide(body):
+            if 'next' in body['questions']:
+                return decision_reply(body)
+            reply = decision_reply(body, 'keep')
+            for unit in body['state']['candidates']:
+                if any(f'OBS_{i}_' in str(unit['messages']) for i in range(8, 12)):
+                    key = unit['id']
+                    reply['answers'][key] = decision_reply(body, 'archive')['answers'][key]
+            return reply
+
+        self.decide = decide
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        last = [b for _, b in self.calls if 'next' in b.get('questions', {})][-1]
+        history = str(last['state']['history'])
+        for i in range(8):
+            self.assertIn(f'OBS_{i}_', history)
+        self.assertNotIn('OBS_8_', history)
+        self.assertNotIn('OBS_9_', history)
+        self.assertEqual(sum(m['role'] == 'tool' for m in self.archive()), 12)
+        self.assertIn('OBS_8_' + 'x' * 500, str(self.archive()))
+
+    def test_memory_selection_resumes_after_removing_a_batch(self):
+        (self.skills / 'actions.json').write_text(json.dumps([
+            {'description': f'observe {i}', 'command': "printf '" + f'OBS_{i}_' + 'x' * 800 + "'",
+             'after': [i-1] if i else []} for i in range(12)]))
+
+        def decide(body):
+            if 'next' in body['questions']:
+                return decision_reply(body)
+            done = all(a['status'] == 1 for a in body['state']['actions'])
+            return decision_reply(body, 'archive' if done else 'keep')
+
+        self.decide = decide
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        # Inspect the decision immediately after the last tool, before generation
+        # adds another message and could trigger a separate compaction cycle.
+        completed = next(b for _, b in self.calls if 'next' in b.get('questions', {})
+                         and len(b['state']['actions']) == 12
+                         and all(a['status'] == 1 for a in b['state']['actions']))
+        self.assertNotIn('OBS_8_', str(completed['state']['history']))
+        self.assertIn('OBS_11_', str(completed['state']['history']))
+        self.assertEqual(sum(m['role'] == 'tool' for m in self.archive()), 12)
+
     def test_oversized_pinned_instructions_fail_before_provider_spend(self):
         (self.skills / 'system.md').write_text('Pinned instruction. ' * 3000)
         result = self.run_agent()
