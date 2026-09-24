@@ -1,18 +1,20 @@
 # SubZeroClaw
 
-> A minimal agentic runtime written in C: ~550 lines of source, a 55KB binary, ~2MB RAM at runtime. One skill file + one LLM + one shell loop. No framework, no plugins, no adapters. Small enough to run anywhere — edge devices, Raspberry Pi, local automation, and large-scale agent swarms.
+> A minimal agentic runtime written in C: ~1,400 lines of source, a 90KB binary, ~2MB RAM at runtime. One skill file + one LLM + one shell loop. No framework, no plugins, no adapters. Small enough to run anywhere — edge devices, Raspberry Pi, local automation, and large-scale agent swarms.
 
 SubZeroClaw connects an LLM to a shell and loops: it reads a skill (a plain markdown file), calls the model, runs the one tool the model asks for (the shell), and repeats until the task is done. Because the only tool is the shell, any CLI you already have installed (git, curl, ffmpeg, jq, rsync, ...) is immediately available to the agent — there are no integrations to build. When context grows, the runtime does not summarize in-process: the unhardcoded router signals pressure (an `x_router.compact` flag) and the old turns are sealed asynchronously in the background (append-only), so the loop never pauses.
 
 ## Facts
 
-- Language: C (~550 lines of runtime in a single file)
-- Binary size: 55 KB
+- Language: C (~1,400 lines: the core loop in src/subzeroclaw.c, ~670 lines, plus the optional decision controller in src/decision.h, ~750 lines)
+- Binary size: 90 KB (x86-64 Linux, gcc -O2, unstripped)
 - RAM at runtime: ~2 MB
 - Dependencies: a shell with curl, and unhardcoded (the router substrate — model selection, prompt-cache affinity, context compaction; MIT). cJSON is vendored in-repo, not a dependency.
 - License: MIT
 - Compiles on a Raspberry Pi in ~0.5s
-- Provider: any OpenAI-compatible endpoint (defaults to OpenRouter)
+- Provider: designed to run on the unhardcoded LLM router; any OpenAI-compatible endpoint works in a degraded standalone mode (no routing, prompt caching or compaction)
+- Optional decision-model control (`decision_extra`): a controller picks prepared shell actions and their parameters, asking for generation only when needed
+- Safety: none by design. Commands the model chooses run unsandboxed with no confirmation; run it on a machine or container you can afford to lose
 - Maintained by GenLayer Labs
 
 ## Philosophy
@@ -22,6 +24,7 @@ SubZeroClaw is an anti-framework. It does one thing — connect an LLM to a shel
 ## Docs
 
 - [README](https://github.com/genlayerlabs/subzeroclaw#readme): full documentation — quickstart, setup, config reference, troubleshooting, philosophy
-- [Source](https://github.com/genlayerlabs/subzeroclaw/blob/main/src/subzeroclaw.c): the entire runtime in one readable file
+- [Source](https://github.com/genlayerlabs/subzeroclaw/blob/main/src/subzeroclaw.c): the core loop in one readable file
+- [Decision models](https://github.com/genlayerlabs/subzeroclaw/blob/main/examples/decision-models/README.md): configuration, action contract and limitations of the optional controller
 - [Contributing](https://github.com/genlayerlabs/subzeroclaw/blob/main/CONTRIBUTING.md): the anti-framework contribution model (reduce complexity, or prove a runtime limitation)
 - [Landing page](https://subzeroclaw.com/)
