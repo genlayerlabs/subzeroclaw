@@ -44,7 +44,7 @@ The original loop described below remains the default when `decision_extra` is u
 ```bash
 git clone https://github.com/genlayerlabs/subzeroclaw
 cd subzeroclaw
-make                          # builds the 55KB binary in ~0.5s
+make                          # builds the 90KB binary
 
 mkdir -p ~/.subzeroclaw/skills
 cat > ~/.subzeroclaw/config << 'EOF'
@@ -113,8 +113,8 @@ SubZeroClaw doesn't simplify their architecture. It ignores it and writes the lo
 |                   | SubZeroClaw  | ZeroClaw     | OpenClaw     |
 |-------------------|--------------|--------------|--------------|
 | Language          | C            | Rust         | TypeScript   |
-| Source            | ~550 lines        | ~15,000      | ~430,000     |
-| Binary            | 55 KB             | 3.4 MB       | 80+ MB       |
+| Source            | ~1,400 lines      | ~15,000      | ~430,000     |
+| Binary            | 90 KB             | 3.4 MB       | 80+ MB       |
 | RAM (runtime)     | ~2 MB             | < 5 MB       | 80-120 MB    |
 | Compiles on Pi    | 0.5s              | OOM          | slow         |
 | Dependencies      | curl, unhardcoded | ~100 crates  | ~800 npm     |

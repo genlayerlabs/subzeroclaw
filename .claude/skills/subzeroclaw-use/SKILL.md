@@ -1,7 +1,7 @@
 ---
 name: subzeroclaw-use
 description: >-
-  Run and operate SubZeroClaw — the ~550-line C agentic daemon (skill.md + LLM +
+  Run and operate SubZeroClaw — the ~1,400-line C agentic daemon (skill.md + LLM +
   shell + loop). Load this to build it, configure it (~/.subzeroclaw/config),
   write an agent skill, run a task, wire it to an unhardcoded router for
   routing/cache/compaction, or run it as a systemd service with credential
@@ -30,7 +30,7 @@ that they're one `popen()` away — install the CLI, the model uses it.
 
 ```bash
 git clone https://github.com/genlayerlabs/subzeroclaw && cd subzeroclaw
-make                                   # ~0.5s → the 55KB binary (needs gcc; curl at runtime)
+make                                   # → the 90KB binary (needs gcc; curl at runtime)
 mkdir -p ~/.subzeroclaw/skills
 # ...write ~/.subzeroclaw/config (below) and a skill .md...
 ./subzeroclaw "check disk usage and clean tmp if over 80%"   # one-shot
