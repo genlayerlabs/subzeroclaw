@@ -1,0 +1,20 @@
+name: Site translations
+
+# Pull requests that touch the site must ship translations built from the current English page.
+on:
+  pull_request:
+    paths:
+      - "site/**"
+      - "i18n/**"
+      - "tools/i18n.py"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Translations match the English page
+        run: python3 tools/i18n.py check

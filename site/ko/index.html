@@ -5,7 +5,7 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>SubZeroClaw — 어디서든 돌아갈 만큼 작은 에이전트</title>
-<meta content="SubZeroClaw는 C로 작성한 미니멀한 에이전트 런타임입니다. 약 1,400줄, 90 KB 바이너리, RAM 약 2 MB. 프레임워크는 없고 루프만 있습니다. 엣지 디바이스, 로컬 자동화, 대규모 스웜까지 어디서든 돌아갈 만큼 작습니다." name="description"/>
+<meta content="SubZeroClaw: C로 작성한 미니멀한 에이전트 런타임. 약 1,400줄, 90 KB, RAM 약 2 MB. 프레임워크 없이, 루프만." name="description"/>
 <link href="https://subzeroclaw.com/ko/" rel="canonical"/>
 <link href="https://subzeroclaw.com/" hreflang="en" rel="alternate"/>
 <link href="https://subzeroclaw.com/es/" hreflang="es" rel="alternate"/>
@@ -19,7 +19,7 @@
 <meta content="ko_KR" property="og:locale"/>
 <meta content="SubZeroClaw" property="og:site_name"/>
 <meta content="SubZeroClaw — 어디서든 돌아갈 만큼 작은 에이전트" property="og:title"/>
-<meta content="C로 작성한 미니멀한 에이전트 런타임입니다. 약 1,400줄 · 90 KB · RAM 약 2 MB · 의존성 2개. 프레임워크는 없고 루프만 있습니다." property="og:description"/>
+<meta content="C로 작성한 미니멀한 에이전트 런타임. 약 1,400줄 · 90 KB · RAM 약 2 MB · 의존성 2개. 프레임워크 없이, 루프만." property="og:description"/>
 <meta content="https://subzeroclaw.com/ko/" property="og:url"/>
 <meta content="https://subzeroclaw.com/og-ko.png" property="og:image"/>
 <meta content="image/png" property="og:image:type"/>
@@ -85,7 +85,8 @@
 :root:lang(zh-Hans){--display:"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;--sans:"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif}
 :lang(ko) body{word-break:keep-all}
 :lang(zh-Hans) :is(h1,h3){word-break:keep-all}
-:is(:lang(ko),:lang(zh-Hans)) :is(h1,h2,h3,.brand){letter-spacing:0}
+:is(:lang(ru),:lang(tr)) :is(h1,h3){-webkit-hyphens:auto;hyphens:auto}
+:is(:lang(ko),:lang(zh-Hans)) :is(h1,h3){letter-spacing:0}
 :is(:lang(ru),:lang(ko),:lang(zh-Hans)) h1{font-weight:700;line-height:1.08}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
@@ -101,12 +102,17 @@ nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(8px);background:color-
 .brand{display:flex;align-items:center;gap:14px;font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:21px;letter-spacing:-.02em}
 .brand svg{width:64px;height:64px}
 .nav-r{display:flex;align-items:center;gap:24px;font-size:14.5px;color:var(--ink-2)}
-.nav-r a{transition:color .2s}
+.nav-r a{transition:color .2s;white-space:nowrap}
 .nav-r a:hover{color:var(--ink)}
 .lang-pick select{appearance:none;-webkit-appearance:none;font:inherit;font-size:13px;color:var(--ink-2);background:transparent;border:1px solid var(--line);border-radius:999px;padding:5px 24px 5px 11px;cursor:pointer;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-size:4px 4px;background-repeat:no-repeat;background-position:calc(100% - 13px) 52%,calc(100% - 9px) 52%}
 .lang-pick select:hover{color:var(--ink);border-color:var(--ink-3)}
+.langbar{display:flex;flex:none;align-items:center;justify-content:center;gap:8px;background:var(--ink);color:var(--sand);font:500 14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Apple SD Gothic Neo","Noto Sans KR","PingFang SC","Noto Sans SC",sans-serif;padding:0 4px 0 16px;min-height:44px}
+.langbar p{padding:10px 0;min-width:0}
+.langbar a{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--clay-lt);font-weight:600;white-space:nowrap}
+.langbar button{flex:none;width:44px;height:44px;border:0;background:none;color:inherit;font-size:22px;line-height:1;cursor:pointer;border-radius:8px}
+.langbar :focus-visible{outline-color:var(--clay-lt)}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.nav-r .pill{font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:var(--ink-2)}
+.nav-r .pill{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:var(--ink-2)}
 
 /* hero */
 .hero{min-height:calc(100svh - 96px);display:flex;align-items:center;padding:clamp(20px,4vw,40px) 0;overflow-x:clip}
@@ -117,7 +123,7 @@ h1 em{font-style:normal;color:var(--clay)}
 .copy:hover{transform:translateY(-2px);background:#272411}
 .copy .prompt{color:var(--clay-lt)}
 .copy .cmd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.copy .lbl{flex:none;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;background:var(--sage);color:var(--sand);padding:.4rem .75rem;border-radius:8px;transition:.2s}
+.copy .lbl{flex:none;font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;background:var(--sage);color:var(--sand);padding:.4rem .75rem;border-radius:8px;transition:.2s}
 .copy.done .lbl{background:var(--clay)}
 .stats{margin-top:clamp(1.3rem,3.5vh,1.9rem);font-family:var(--mono);font-size:.78rem;color:var(--ink-2);letter-spacing:.02em;text-wrap:balance}
 
@@ -134,7 +140,7 @@ h2 .op{font-weight:700;color:var(--ink-2)}
 .loop p{font-size:1.06rem;line-height:1.6;max-width:34em;color:var(--ink)}
 .loop p+p{margin-top:1rem}
 .loop code{font-family:var(--mono);font-size:.88em}
-.term{background:var(--btn);color:var(--sand);border-radius:13px;padding:1.4rem 1.5rem;font-family:var(--mono);font-size:clamp(.72rem,1.05vw,.8rem);line-height:1.8;overflow-x:auto;white-space:pre}
+.term{background:var(--btn);color:var(--sand);border-radius:13px;padding:1.4rem 1.5rem;font-family:var(--mono);font-size:clamp(.75rem,1.05vw,.8rem);line-height:1.8;overflow-x:auto;white-space:pre}
 .term .p{color:var(--clay-lt);user-select:none}
 .term .c{color:var(--code-dim)}
 .term-note{margin-top:.9rem;font-size:.9rem;color:var(--ink-2)}
@@ -155,7 +161,7 @@ footer{border-top:1px solid var(--line)}
 .foot-langs{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:12px}
 .foot-langs a{color:var(--ink-2);padding:4px 0}
 .foot-langs a:hover,.foot-langs a[aria-current]{color:var(--ink)}
-.foot-c{font-family:var(--mono);font-size:11px;color:var(--ink-2);letter-spacing:.02em}
+.foot-c{font-family:var(--mono);font-size:12px;color:var(--ink-2);letter-spacing:.02em}
 
 @media(max-width:820px){
   .nav-in{height:72px}
@@ -166,12 +172,21 @@ footer{border-top:1px solid var(--line)}
   .nav-r .hide{display:none}
   .nav-r{gap:16px}
   .lang-pick select,.foot-langs a{min-height:44px}
+  .nav-r a,.links a,.gl{display:inline-flex;align-items:center;min-height:44px}
+  .brand{min-height:44px}
+  .links{gap:0 1.8rem;margin-top:1.4rem}
   .foot-langs a{display:inline-flex;align-items:center;min-width:44px}
 }
 @media(max-width:480px){
   .brand{font-size:19px;gap:10px}
   .brand svg{width:36px;height:36px}
   .nav-r .docs{display:none}
+}
+@media(max-width:360px){
+  .wrap{padding:0 16px}
+  .brand{font-size:17px;gap:8px}
+  .brand svg{width:32px;height:32px}
+  .nav-r{gap:12px}
 }
 @media(prefers-reduced-motion:reduce){.bh{display:none}}
 </style>
@@ -310,5 +325,6 @@ EOF
   if(s) s.addEventListener('change', function(){ location.href=s.value; });
 })();
 </script>
+<script defer="" src="/langbar.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 {
   "240a36d8": "SubZeroClaw — her yerde çalışabilecek kadar küçük bir ajan",
-  "2989fe33": "SubZeroClaw, C ile yazılmış minimal bir ajan çalışma ortamı: ~1.400 satır, 90 KB’lık bir ikili dosya, ~2 MB RAM. Framework yok, yalnızca döngü. Her yerde çalışabilecek kadar küçük: uç cihazlar, yerel otomasyon ve büyük ölçekli ajan sürüleri.",
+  "5da16d26": "SubZeroClaw, C ile yazılmış minimal ajan çalışma ortamı: ~1.400 satır, 90 KB ikili dosya, ~2 MB RAM. Framework yok, yalnızca döngü. Her yerde çalışır.",
   "7fe944e0": "C ile yazılmış minimal bir ajan çalışma ortamı. ~1.400 satır · 90 KB · ~2 MB RAM · 2 bağımlılık. Framework yok, yalnızca döngü.",
   "391ed594": "SubZeroClaw — her yerde çalışabilecek kadar küçük bir ajan. 1.400 satır C kodu, 90 KB, ~2 MB RAM, 2 bağımlılık.",
   "c6149f70": "C ile yazılmış minimal bir ajan çalışma ortamı. Framework yok, yalnızca döngü.",
@@ -27,5 +27,8 @@
   "f6ff13e3": "Bir güneşin çevresinde eksantrik bir yörüngede dolanan kara delik: uzaktayken yavaşlayıp küçülüyor, sonra hızlanıp büyüyerek güneşin yanından fırlıyor; önce arkasından geçiyor, ardından yeniden önüne çıkıyor.",
   "d07133c8": "Hızlı başlangıç",
   "2d3ef67f": "kopyalandı ✓",
-  "29cf5d8c": "bu yol, ulaşamadığımız bir yerde çalışıyor."
+  "29cf5d8c": "bu yol, ulaşamadığımız bir yerde çalışıyor.",
+  "4bee1489": "Bu sayfa Türkçe olarak da mevcut.",
+  "0991c336": "Türkçe okuyun",
+  "70afe9ef": "Kapat"
 }

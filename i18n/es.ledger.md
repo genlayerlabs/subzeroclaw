@@ -113,3 +113,27 @@ Naturalness: the cold read found nothing stiff or calqued. The register is tú a
 
 - Look at the rendered h1 at about 1440 and 1024 px to confirm that the four-line break "funciona / donde sea" reads well. My widths come from font metrics (PIL), not from a browser.
 - A matter of taste, left unchanged: "prompt de sistema" vs "prompt del sistema" (the latter is somewhat more frequent in Spanish AI docs). Both are correct.
+
+## 2026-09-25: new catalogue ids
+
+| id | Spanish | chars | decision |
+|---|---|---|---|
+| 5da16d26 (meta description, replaces 2989fe33, which is deleted) | SubZeroClaw: un entorno de ejecución mínimo para agentes en C. ~1400 líneas, 90 KB, ~2 MB de RAM. Sin framework, solo el bucle. Funciona donde sea. | 147 / 150 | Reuses the approved "entorno de ejecución mínimo para agentes", "Sin framework, solo el bucle" and "funciona donde sea". The brand is followed by a colon, as in the titles. "90 KB" appears without "binario", as in the approved stats line and og description (1f77c53c, 391ed594), because keeping "un binario de" and "escrito" would take it over 150. "Tan pequeño que" is dropped for the same reason. The figures just before it carry the size, so the claim is not weakened. The facts are unchanged: ~1400, 90 KB, ~2 MB. |
+| 4bee1489 (language bar message) | También disponible en español. | 30 | Shown on other locales to Spanish-preferring browsers, so it names Spanish. "Esta página también está disponible en español." is the literal version, but it would not fit on one line next to the link at 390 px. Measured with SF 14 px, message plus link is ~279 px against ~298 px of room (390 − 16 − 4 padding − 44 button − 2×14 gap). "Esta página también está en español." measures ~312 px and would wrap. "También disponible en…" is a standard Spanish UI fragment. |
+| 0991c336 (language bar link) | Leer en español | 15 | Infinitive for links, as in the ledger conventions. "la" is dropped ("Leerla") because the bare infinitive is the usual Spanish link style. |
+| 70afe9ef (close button aria-label) | Cerrar | 6 | "Cerrar" is the standard accessible name for an × button. "Descartar" is a literal rendering of "Dismiss" and reads as discarding data. |
+| 68a41942 (nav) | Docs | 4 | Confirmed per the review above: normal developer usage, and "Documentación" overflows the nav at 481 to 820 px. Listed in `_same_as_english`. |
+
+### 2026-09-25: second pass (native editor)
+
+Cold read first, then checked against `en.json` and the `.langbar` CSS in `site/index.html`. The bar was rendered in headless Chrome on macOS (system-ui resolves to SF, which iOS also uses) with the page's exact bar CSS, at 360, 375 and 390 px, `isMobile`.
+
+| id | before → after | reason |
+|---|---|---|
+| 4bee1489 | `También disponible en español.` → `Esta página también está en español.` | Layout, and the result also reads better. In Chrome, "También disponible en español. Leer en español" measures 317 px against 312 px of room at 390 px (390 − 16 − 4 padding − 44 button − one 14 px gap). The earlier ~279 px figure came from font metrics and was too low. The bar then wraps and drops the × to a second row, making it 88 px tall, and the same happens at 375 and 360. The new message plus "Leer" measures 279 px. It stays on one line at 390, 375 and 360 px, and the bar keeps its 44 px height. It is also the natural full sentence, and it avoids saying "en español" twice in one line. |
+| 0991c336 | `Leer en español` → `Leer` | Needed so the full sentence fits. The link sits inside the sentence that names the language, so its purpose is clear from context (WCAG 2.4.4). It also keeps `hreflang="es"`, and the infinitive matches the ledger's link style ("Leer el README"). Rejected: "Disponible en español. Leer en español" (259 px, but it repeats itself and reads machine-made), "También en español. Leer en español" (same problem), and "…Ver en español" (310 px, which fits by only 2 px at 390). |
+| 5da16d26 | no change (147/150) | The cold read is fine. "para agentes en C" carries the same attachment as the English "agent runtime in C", and the comma list works as a spec fragment. Restoring ", escrito en C", "un binario de" or "Tan pequeño que" would each push it over 150. |
+| 70afe9ef | no change | "Cerrar" is the standard accessible name for ×. |
+| 68a41942 | no change | "Docs" is confirmed and stays listed in `_same_as_english`. |
+
+Validation: `validate('es', …)` returns `[]`. 2989fe33 is absent, and the only non-catalogue key is `_same_as_english`. Build not run.

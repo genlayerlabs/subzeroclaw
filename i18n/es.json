@@ -1,6 +1,6 @@
 {
  "240a36d8": "SubZeroClaw: un agente tan pequeño que funciona donde sea",
- "2989fe33": "SubZeroClaw es un entorno de ejecución mínimo para agentes, escrito en C: ~1400 líneas, un binario de 90 KB y ~2 MB de RAM. Sin framework, solo el bucle. Tan pequeño que funciona en cualquier parte: dispositivos edge, automatización local y enjambres a gran escala.",
+ "5da16d26": "SubZeroClaw: un entorno de ejecución mínimo para agentes en C. ~1400 líneas, 90 KB, ~2 MB de RAM. Sin framework, solo el bucle. Funciona donde sea.",
  "7fe944e0": "Un entorno de ejecución mínimo para agentes, escrito en C. ~1400 líneas · 90 KB · ~2 MB de RAM · 2 dependencias. Sin framework, solo el bucle.",
  "391ed594": "SubZeroClaw: un agente tan pequeño que funciona donde sea. 1400 líneas de C, 90 KB, ~2 MB de RAM, 2 dependencias.",
  "c6149f70": "Un entorno de ejecución mínimo para agentes, escrito en C. Sin framework, solo el bucle.",
@@ -27,5 +27,11 @@
  "f6ff13e3": "Un agujero negro en una órbita excéntrica alrededor de un sol: lejos de él, frena y se encoge; luego acelera y crece al pasar a toda velocidad junto al sol, se oculta tras él y vuelve a salir por delante.",
  "d07133c8": "Inicio rápido",
  "2d3ef67f": "copiado ✓",
- "29cf5d8c": "esta ruta salió corriendo hacia algún lugar al que no llegamos."
+ "29cf5d8c": "esta ruta salió corriendo hacia algún lugar al que no llegamos.",
+ "4bee1489": "Esta página también está en español.",
+ "0991c336": "Leer",
+ "70afe9ef": "Cerrar",
+ "_same_as_english": [
+  "68a41942"
+ ]
 }

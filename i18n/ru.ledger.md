@@ -84,3 +84,25 @@ No other changes. Everything else reads as native developer prose.
 - The alt text (f6ff13e3) «на эксцентрической орбите … уходит за него и снова выходит вперёд» is accurate but heavy. A plainer «на вытянутой орбите» would also be fine; this is screen-reader-only text, so I left it.
 - The dashes use a plain space before «—», as the Labs ru page does. Strict Russian typesetting would use U+00A0 so that a line never starts with a dash. That's a sitewide choice, not something to fix per string.
 - The rendered page hasn't been checked in a browser (the build was out of scope). Line breaks in the h1 and the chip width above are calculated, not observed.
+
+## 2026-09-25: new catalogue ids
+
+| id | Russian | chars | decision |
+|---|---|---|---|
+| 5da16d26 (meta description; replaces 2989fe33, which is deleted) | SubZeroClaw — среда выполнения агентов на C, которая запустится где угодно: ~1400 строк, бинарник 90 КБ, ~2 МБ ОЗУ. Никакого фреймворка — только цикл. | 150 / 150 | Reuses the approved «среда выполнения агентов», «бинарник», «Никакого фреймворка — только цикл» and the headline's «запустится где угодно». The old wording plus a closing «Запускается где угодно.» measures 159, so something had to go. «Минималистичная» is dropped: the figures carry the size. "Small enough to" is kept through the colon: «запустится где угодно: ~1400 строк, 90 КБ, ~2 МБ» reads as "runs anywhere because it is this small", which keeps the causal link the review restored in 2989fe33. «около» becomes «~», matching the stats line (7fe944e0) and the tilde in the source. The facts are unchanged: ~1400, 90 КБ, ~2 МБ, U+00A0 inside each number–unit pair. Rejected: «Так мала, что запустится где угодно» as a closing sentence (156; its elided subject follows «цикл»), and starting a sentence with «~1400» (awkward in Russian). |
+| 4bee1489 (language bar message) | Есть версия на русском. | 23 | Shown on other locales to Russian-preferring browsers, so it names Russian. The literal «Эта страница есть и на русском.» measures 201 px plus 116 px for the link (SF 14 px, link semibold), which is more than the ~298 px available at 390 px (390 − 16 − 4 padding − 44 button − 2×14 gap), so the bar would wrap. «Есть версия на русском.» + link = ~266 px (Helvetica ~276 px), so it fits on one line. «Версия» is the normal Russian UI word for a language edition of a page. |
+| 0991c336 (language bar link) | Читать по-русски | 16 | "Read it in Russian". «По-русски» is the idiomatic adverb and avoids a second «на русском» right after the message. The label also works on its own for screen readers, which «Открыть» / «Перейти» would not. |
+| 70afe9ef (close button aria-label) | Закрыть | 7 | The standard accessible name for an × button. «Скрыть» is also acceptable; «Отклонить» (literal "Dismiss") sounds like declining a request. |
+
+### 2026-09-25: second-pass review (new ids)
+
+I read the four strings cold as they would appear on the page, then checked them against `en.json`, the rest of `ru.json` and the width of `.langbar` in `site/index.html`.
+
+| id | before -> after | reason |
+|---|---|---|
+| 5da16d26 | «SubZeroClaw — среда выполнения агентов на C, которая запустится где угодно: ~1400 строк, бинарник 90 КБ, ~2 МБ ОЗУ. Никакого фреймворка — только цикл.» -> «SubZeroClaw — среда выполнения агентов на C: ~1400 строк, бинарник 90 КБ, ~2 МБ ОЗУ, так что запустится где угодно. Никакого фреймворка — только цикл.» (150 / 150) | After «где угодно:» a Russian reader expects a list of places («на edge-устройствах, …»), so reading «~1400 строк» there is a small jolt. Reading the colon as "because" takes a second pass. «…, так что запустится где угодно» states the "small enough to" consequence directly and ties it to the figures. The colon after «на C» introduces the figures, as in the approved 03765c8f and 7fe944e0. It also removes the «которая» relative clause. The facts, the tilde and U+00A0 inside each number–unit pair are unchanged. The length is also 150; «минималистичная» stays out because it does not fit. |
+| 4bee1489 | no change: «Есть версия на русском.» (23) | Natural as it stands. The one wrap-safe alternative, «Эта страница есть на русском.», would leave almost no margin. Width: `.langbar` puts the message and the link in one `<p>` with one 14px gap to the 44px button. That gives about 390 − 20 − 44 − 14 ≈ 312px, so ~266–276px fits on one line. |
+| 0991c336 | no change: «Читать по-русски» (16) | Idiomatic, and it avoids repeating «на русском». |
+| 70afe9ef | no change: «Закрыть» (7) | The standard name for an × button. |
+
+Validation: `ru.json` has exactly the ids in `en.json` (none missing, none extra), `2989fe33` is absent, and 5da16d26 has no plain space inside a number–unit pair.

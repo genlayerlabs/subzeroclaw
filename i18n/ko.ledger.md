@@ -94,3 +94,24 @@ Method: I cold-read every ko string in page order first. Then I compared each on
 ### Still for a native speaker
 
 - **29cf5d8c (404).** "이 경로는 우리 손이 닿지 않는 어딘가에서 돌아갔나 봅니다." The "run" pun doesn't carry over cleanly. 경로가 돌아가다 can read as "the route went back/around". An alternative that drops the headline echo but reads clearly is "…어딘가로 달아났나 봅니다". I left it unchanged because the choice is about taste and tone.
+
+## 2026-09-25: new meta description, og:description trim, language suggestion bar
+
+- **5da16d26** (meta description, replaces 2989fe33, which is deleted). Limit 80 characters. Result: `C로 작성한 미니멀한 에이전트 런타임입니다. 약 1,400줄, 90 KB 바이너리, RAM 약 2 MB. 프레임워크는 없고 루프만 있습니다.` (78). Every phrase comes from the approved old description. The Korean glyphs don't leave room for every clause, so two are dropped. "SubZeroClaw는" goes because the `<title>` (240a36d8) sits right above the snippet and already names the product. "Small enough to run anywhere" (어디서든 돌아갈 만큼 작습니다) goes because the same title already says 어디서든 돌아갈 만큼 작은. Keeping either one would push the text past 80. The three figures are kept exactly.
+- **7fe944e0** (og:description). It was 84 and is now 76: `C로 작성한 미니멀한 에이전트 런타임. 약 1,400줄 · 90 KB · RAM 약 2 MB · 의존성 2개. 프레임워크 없이, 루프만.` The whole card now uses noun-phrase style, which matches the English fragments and the · stats line. I rejected mixing 입니다 with a fragment. "프레임워크 없이, 루프만" is the tagline form of the approved 프레임워크는 없고 루프만 있습니다. Units stay spaced (90 KB, 2 MB) as set in the Numbers section.
+- **4bee1489 / 0991c336 / 70afe9ef** (the suggestion bar on the other language versions, shown in Korean). `한국어로도 볼 수 있습니다.` / `한국어로 보기` / `닫기`. The message translates the meaning ("also available in Korean"). It drops "이 페이지는" because Korean omits an obvious subject and the bar has to fit on one line. Width check: the bar leaves about 312 px for text on a 390 px phone. The longer `이 페이지는 한국어로도 볼 수 있습니다.` measured 296 px in Apple SD Gothic Neo at 14px, which is too tight and wraps with the wider Noto Sans KR on Android. The short form measures 228 px. 닫기 is the standard Korean label for a close button. I rejected 무시 ("ignore"): it is too literal for "Dismiss".
+
+### 2026-09-25: second pass (native editor)
+
+I made no changes. I read the five strings cold in page context first, then checked them against en.json and the approved wording.
+
+- **5da16d26** (78). It reads naturally as a snippet without a subject, because the `<title>` directly above names the product. The wording matches twitter:description (c6149f70) and the old approved description. I tried adding `SubZeroClaw는` (91) and a shorter `…없이, 루프만` variant (82). Both are over 80. So both drops stand.
+- **7fe944e0** (76). The fragment style is consistent within the card. The comma in "프레임워크 없이, 루프만" is normal in Korean tagline copy (e.g. "군더더기 없이, 핵심만"), so I kept it.
+- **4bee1489 / 0991c336 / 70afe9ef** (15 / 7 / 2). The "한국어로도 … / 한국어로 보기" echo mirrors the English pair and reads naturally. I considered `한국어 버전도 있습니다.` but it is no clearer, so I didn't use it. I re-measured the whole `<p>` (message + space + link in SemiBold) with Apple SD Gothic Neo at 14px. It comes to 228 px against about 312 px available (390 − 16 − 4 padding − 44 button − 14 gap), so it fits on one line. 닫기 is correct for the × button's aria-label.
+
+## 2026-09-25: build guard fix
+
+| id | before | after | reason |
+|---|---|---|---|
+| 5da16d26 | C로 작성한 미니멀한 에이전트 런타임입니다. 약 1,400줄, 90 KB 바이너리, RAM 약 2 MB. 프레임워크는 없고 루프만 있습니다. | SubZeroClaw: C로 작성한 미니멀한 에이전트 런타임. 약 1,400줄, 90 KB, RAM 약 2 MB. 프레임워크 없이, 루프만. | The build refuses a translation that drops a protected name the English has (SubZeroClaw). Rebuilt from the editor-approved og:description phrasing (7fe944e0) so the name fits: 78 characters, under the 80 CJK limit. |
+| 5da16d26 (native-editor verdict) | SubZeroClaw: C로 작성한 미니멀한 에이전트 런타임. 약 1,400줄, 90 KB, RAM 약 2 MB. 프레임워크 없이, 루프만. | (no change — kept as is) | Read cold as a Korean developer scanning search results: it parses naturally as "SubZeroClaw: a minimal agent runtime written in C. ~1,400 lines, 90 KB, ~2 MB RAM. No framework, just the loop." The noun-fragment register matches 7fe944e0 exactly (same clause order and wording), so the card stays consistent instead of mixing 입니다 sentences with fragments. All three figures are exact and unchanged. 78 ≤ 80 via Python `len()`. Left unedited.|

@@ -90,3 +90,28 @@ Reviewer's pass: skill steps 6 (accuracy) and 7 (independent naturalness). Cold 
 - The page uses "ajan" without "yapay zekâ" on first use. The GenLayer Labs page adds it to rule out the spy sense. The code and terminal context make the meaning clear here, but a native speaker should check the title and SERP snippet.
 - 404: "çalışıyor" or "çalışmış".
 - Chip width: "KOPYALANDI ✓" is wider than "COPIED ✓". The command text truncates with an ellipsis, so the layout holds, but check it at mobile width in the build.
+
+## 2026-09-25: new meta description and language suggestion bar
+
+| id | TR | chars | decision |
+|---|---|---|---|
+| 5da16d26 (meta description, replaces 2989fe33) | SubZeroClaw, C ile yazılmış minimal bir ajan çalışma ortamı: ~1.400 satır, 90 KB ikili, ~2 MB RAM. Framework yok, yalnızca döngü. Her yerde çalışır. | 148 / 150 | The first two sentences reuse the approved old description word for word, except "90 KB’lık bir ikili dosya" becomes the stat-list shorthand "90 KB ikili". The literal "Her yerde çalışabilecek kadar küçük." pushed the text to 172+ characters. The close reuses the approved headline verb "her yerde çalışır" (the aorist of general capacity, which the review found is not an overclaim). "Small" is carried by "minimal" and the three figures. The figures are unchanged. 2989fe33 was deleted. |
+| 4bee1489 (bar message) | Bu sayfa Türkçe olarak da mevcut. | 33 | Shown on other locales to visitors who prefer Turkish, so it names Turkish, not English. "… olarak da mevcut" is the standard Turkish UI phrasing for "also available in". |
+| 0991c336 (bar link) | Türkçe okuyun | 13 | "siz" imperative, which is the page register. It is short enough to sit next to the message on a 390px phone. |
+| 70afe9ef (close button aria-label) | Kapat | 5 | The standard Turkish UI label for a close (×) button. The bare imperative follows the UI-label convention (as "kopyala" does). |
+
+For a native speaker: check whether "90 KB ikili" reads naturally in the SERP snippet. The alternative at the limit is "minimal ajan çalışma ortamı … 90 KB ikili dosya" (150 characters, dropping "bir").
+
+### Editor's pass (2026-09-25)
+
+Cold read of the four strings as a Turkish developer sees them (SERP snippet, suggestion bar), then against en.json.
+
+| id | before → after | reason |
+|---|---|---|
+| 5da16d26 (meta description) | `minimal bir ajan çalışma ortamı: … 90 KB ikili, …` → `minimal ajan çalışma ortamı: … 90 KB ikili dosya, …` (148 → 150) | Bare "ikili" as a noun reads as "pair/duo" or a dangling adjective in a snippet; developers write "ikili dosya" (as the approved old description and JSON-LD do). Dropping the indefinite "bir" pays for it; the appositive "minimal ajan çalışma ortamı" is grammatical and natural. Exactly at the 150 limit. Figures unchanged. |
+
+No change:
+
+- 5da16d26 ending "Her yerde çalışır.": kept. It is the approved headline verb and makes no stronger claim than the English "small enough to run anywhere"; "minimal" plus the figures carry "small". "Her yerde çalışacak kadar küçük." would need 168 characters.
+- 4bee1489 "Bu sayfa Türkçe olarak da mevcut.", 0991c336 "Türkçe okuyun", 70afe9ef "Kapat": natural, standard UI Turkish, register matches the page ("okuyun" as in "README’yi okuyun"; bare "Kapat" as in "kopyala"). Measured at 14px SF (500 message, 600 link): message + link ≈ 296px against ≈ 312px available on a 390px phone (16px left padding, 4px right, 44px button, 14px gap), so it fits on one line. The "Türkçe … Türkçe" repeat mirrors the English and each half must read alone (the link is also announced out of context).
+- The earlier "for a native speaker" flag on "90 KB ikili" is resolved by this change.

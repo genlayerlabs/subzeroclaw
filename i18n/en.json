@@ -10,9 +10,9 @@
   ]
  },
  {
-  "id": "2989fe33",
+  "id": "5da16d26",
   "kind": "meta",
-  "en": "SubZeroClaw is a minimal agent runtime in C — ~1,400 lines, a 90KB binary, ~2MB RAM. No framework, just the loop. Small enough to run anywhere: edge devices, local automation, and large-scale swarms.",
+  "en": "SubZeroClaw is a minimal agent runtime in C: ~1,400 lines, a 90 KB binary, ~2 MB RAM. No framework, just the loop. Small enough to run anywhere.",
   "where": [
    "head meta description"
   ]
@@ -233,6 +233,30 @@
   "en": "this path ran somewhere we can't reach.",
   "where": [
    "404.html message"
+  ]
+ },
+ {
+  "id": "4bee1489",
+  "kind": "js",
+  "en": "This page is also available in English.",
+  "where": [
+   "langbar.js msg: suggestion bar, shown to visitors whose browser prefers this language"
+  ]
+ },
+ {
+  "id": "0991c336",
+  "kind": "js",
+  "en": "Read it in English",
+  "where": [
+   "langbar.js go: suggestion bar, shown to visitors whose browser prefers this language"
+  ]
+ },
+ {
+  "id": "70afe9ef",
+  "kind": "js",
+  "en": "Dismiss",
+  "where": [
+   "langbar.js close: suggestion bar, shown to visitors whose browser prefers this language"
   ]
  }
 ]

@@ -101,3 +101,28 @@ Verdicts on open questions:
 - Allowlist: keep 白名单. It is what mainland developers and docs say; 允许列表 reads as localized-from-English.
 - "afford to lose": keep 毁掉也无妨. The risk is the machine being wiped/destroyed by the model; 丢了也不心疼 implies
   misplacing it and is more colloquial than the rest of the warning.
+
+## 2026-09-25: meta description (80-char limit) and language suggestion bar
+
+- 5da16d26 (meta description, replaces 2989fe33, now deleted): `SubZeroClaw 是 C 语言编写的极简智能体运行时：约 1,400 行代码，二进制 90 KB，内存约 2 MB。没有框架，只有循环。小到随处都能运行。` (80 chars).
+  Reuses the approved old description and headline wording (极简智能体运行时, 没有框架，只有循环, 小到随处都能运行 with neutral 运行 for metadata).
+  Trimmed to fit: 是用…编写 → 是…编写, 二进制文件 → 二进制, 内存占用约 → 内存约; the old list (边缘设备…集群) is gone because the new English drops it.
+  Facts exact: 约 1,400 / 90 KB / 约 2 MB.
+- Suggestion bar (shown on other locales to zh-Hans browsers, so it names 简体中文, not English):
+  - 4bee1489: `本页也有简体中文版。` (10). 本页 is the short, standard web form; 也有…版 = "is also available in".
+  - 0991c336: `阅读简体中文版` (7). Verb + object link label; 阅读 matches "Read it".
+  - 70afe9ef: `关闭` (2). Standard label for a close (×) button; 忽略 would read as "ignore".
+
+### 2026-09-25: editor second pass (meta description, suggestion bar)
+
+Cold read, then against en.json. Changes:
+
+- 5da16d26: `SubZeroClaw 是 C 语言编写的极简智能体运行时：约 1,400 行代码，…` → `SubZeroClaw：用 C 语言编写的极简智能体运行时。约 1,400 行代码，…` (rest unchanged; 80 → 80 chars).
+  Reason: 是 C 语言编写的 (dropping 用 to save a character) reads clipped; the colon form restores 用 at the same length,
+  reuses the approved hero wording 用 C 语言编写的极简智能体运行时 verbatim, follows the title's `SubZeroClaw：…` pattern,
+  and gives the stats their own sentence. Meaning unchanged ("SubZeroClaw is a minimal agent runtime in C"); facts exact.
+- 4bee1489 `本页也有简体中文版。`, 0991c336 `阅读简体中文版`, 70afe9ef `关闭`: no change. Natural and short; the link keeps the
+  language name so it is meaningful out of context (accessibility). Width at 390px: bar is 14px, 10 + 7 CJK chars ≈ 238px
+  of ~298px available beside the 44px close button, so one line.
+
+Validation: `validate('zh', …)` returns []; 2989fe33 absent from zh.json.
