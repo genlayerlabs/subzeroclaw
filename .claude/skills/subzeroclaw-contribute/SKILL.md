@@ -1,7 +1,7 @@
 ---
 name: subzeroclaw-contribute
 description: >-
-  Develop SubZeroClaw — the single-file ~550-line C agentic runtime. Load this
+  Develop SubZeroClaw — the ~1,400-line C agentic runtime. Load this
   before changing src/subzeroclaw.c or src/test.c: it carries the anti-framework
   thesis (the goal is NOT to grow), the code map (the loop, config, the shell
   tool, async compaction), what will and won't be merged, and the build/test
@@ -11,8 +11,8 @@ description: >-
 # Contributing to SubZeroClaw
 
 SubZeroClaw is an **anti-framework**: the goal is not to grow but to stay minimal,
-readable and correct. The whole runtime is one file, `src/subzeroclaw.c`
-(~550 lines). Before you add anything, read `CONTRIBUTING.md` — a PR that *adds*
+readable and correct. The loop is `src/subzeroclaw.c` (~670 lines); the optional
+decision controller is `src/decision.h` (~750 lines). Before you add anything, read `CONTRIBUTING.md` — a PR that *adds*
 surface has to clear a high bar, and several categories are refused outright.
 
 ## The two contributions that are welcome
