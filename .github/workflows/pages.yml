@@ -55,3 +55,10 @@ jobs:
             sleep 30
           done
           exit 1
+
+      # Tell Bing, Yandex, Naver, Seznam and the other IndexNow engines what changed.
+      # The key is public by design (served at /<key>.txt); Google and Baidu read the sitemap instead.
+      - name: IndexNow
+        env:
+          INDEXNOW_KEY: 29551045540d2bb471f4a188d4f7fa47
+        run: python3 tools/searchreg.py indexnow submit https://subzeroclaw.com --urls-from-sitemap

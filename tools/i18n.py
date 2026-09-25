@@ -231,6 +231,13 @@ def build():
         for tag, attr, val in META:
             el = soup.find(tag, attrs={attr: val}); el['content'] = t(norm(el['content']))
         soup.find('meta', property='og:locale')['content'] = og
+        # Bing reads content-language as a strong language signal; Baidu reads it and applicable-device
+        cl = soup.find('meta', attrs={'http-equiv': 'content-language'})
+        cl['content'] = code
+        if code == 'zh-Hans':
+            dev = soup.new_tag('meta', attrs={'name': 'applicable-device', 'content': 'pc,mobile'})
+            cl.insert_after(dev)
+            cl.insert_after('\n')
         soup.find('meta', property='og:url')['content'] = url
         soup.find('link', rel='canonical')['href'] = url
         if (SITE / f'og-{d.strip("/")}.png').exists():
@@ -372,6 +379,9 @@ def verify(base):
         alts = set(re.findall(r'<link[^>]*hreflang="([^"]+)"[^>]*href="([^"]+)"', html)) \
             | {(h, u) for u, h in re.findall(r'<link[^>]*href="([^"]+)"[^>]*hreflang="([^"]+)"', html)}
         title = re.search(r'<title>(.*?)</title>', html, re.S)
+        cl = re.search(r'<meta[^>]*content="([^"]+)"[^>]*http-equiv="content-language"|<meta[^>]*http-equiv="content-language"[^>]*content="([^"]+)"', html)
+        if not cl or (cl.group(1) or cl.group(2)) != code:
+            bad.append(f'{d or "/"} content-language is not {code}')
         line = f'{base + d}: {st} lang={lang and lang.group(1)} canonical={canon} title={title and title.group(1)[:50]!r}'
         print(line)
         if st != 200: bad.append(f'{d or "/"} returned {st}')
