@@ -28,3 +28,4 @@ SubZeroClaw is an anti-framework. It does one thing — connect an LLM to a shel
 - [Decision models](https://github.com/genlayerlabs/subzeroclaw/blob/main/examples/decision-models/README.md): configuration, action contract and limitations of the optional controller
 - [Contributing](https://github.com/genlayerlabs/subzeroclaw/blob/main/CONTRIBUTING.md): the anti-framework contribution model (reduce complexity, or prove a runtime limitation)
 - [Landing page](https://subzeroclaw.com/)
+- Landing page translations: [Español](https://subzeroclaw.com/es/), [한국어](https://subzeroclaw.com/ko/), [简体中文](https://subzeroclaw.com/zh/), [Русский](https://subzeroclaw.com/ru/), [Türkçe](https://subzeroclaw.com/tr/)
