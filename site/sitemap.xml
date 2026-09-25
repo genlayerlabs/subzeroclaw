@@ -1,9 +1,69 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://subzeroclaw.com/</loc>
     <lastmod>2026-09-24</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://subzeroclaw.com/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://subzeroclaw.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://subzeroclaw.com/ko/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://subzeroclaw.com/zh/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://subzeroclaw.com/ru/"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://subzeroclaw.com/tr/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://subzeroclaw.com/"/>
+  </url>
+  <url>
+    <loc>https://subzeroclaw.com/es/</loc>
+    <lastmod>2026-09-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://subzeroclaw.com/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://subzeroclaw.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://subzeroclaw.com/ko/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://subzeroclaw.com/zh/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://subzeroclaw.com/ru/"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://subzeroclaw.com/tr/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://subzeroclaw.com/"/>
+  </url>
+  <url>
+    <loc>https://subzeroclaw.com/ko/</loc>
+    <lastmod>2026-09-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://subzeroclaw.com/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://subzeroclaw.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://subzeroclaw.com/ko/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://subzeroclaw.com/zh/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://subzeroclaw.com/ru/"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://subzeroclaw.com/tr/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://subzeroclaw.com/"/>
+  </url>
+  <url>
+    <loc>https://subzeroclaw.com/zh/</loc>
+    <lastmod>2026-09-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://subzeroclaw.com/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://subzeroclaw.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://subzeroclaw.com/ko/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://subzeroclaw.com/zh/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://subzeroclaw.com/ru/"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://subzeroclaw.com/tr/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://subzeroclaw.com/"/>
+  </url>
+  <url>
+    <loc>https://subzeroclaw.com/ru/</loc>
+    <lastmod>2026-09-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://subzeroclaw.com/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://subzeroclaw.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://subzeroclaw.com/ko/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://subzeroclaw.com/zh/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://subzeroclaw.com/ru/"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://subzeroclaw.com/tr/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://subzeroclaw.com/"/>
+  </url>
+  <url>
+    <loc>https://subzeroclaw.com/tr/</loc>
+    <lastmod>2026-09-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://subzeroclaw.com/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://subzeroclaw.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://subzeroclaw.com/ko/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://subzeroclaw.com/zh/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://subzeroclaw.com/ru/"/>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://subzeroclaw.com/tr/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://subzeroclaw.com/"/>
   </url>
 </urlset>

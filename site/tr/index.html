@@ -1,46 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
+
+<html lang="tr">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SubZeroClaw — an agent small enough to run anywhere</title>
-<meta name="description" content="SubZeroClaw is a minimal agent runtime in C: ~1,400 lines, a 90 KB binary, ~2 MB RAM. No framework, just the loop. Small enough to run anywhere." />
-<link rel="canonical" href="https://subzeroclaw.com/" />
-<link rel="alternate" hreflang="en" href="https://subzeroclaw.com/" />
-<link rel="alternate" hreflang="es" href="https://subzeroclaw.com/es/" />
-<link rel="alternate" hreflang="ko" href="https://subzeroclaw.com/ko/" />
-<link rel="alternate" hreflang="zh-Hans" href="https://subzeroclaw.com/zh/" />
-<link rel="alternate" hreflang="ru" href="https://subzeroclaw.com/ru/" />
-<link rel="alternate" hreflang="tr" href="https://subzeroclaw.com/tr/" />
-<link rel="alternate" hreflang="x-default" href="https://subzeroclaw.com/" />
-<meta name="theme-color" content="#E9E0D2" />
-<meta property="og:type" content="website" />
-<meta property="og:locale" content="en_US" />
-<meta property="og:site_name" content="SubZeroClaw" />
-<meta property="og:title" content="SubZeroClaw — an agent small enough to run anywhere" />
-<meta property="og:description" content="A minimal agent runtime in C. ~1,400 lines · 90KB · ~2MB RAM · 2 deps. No framework, just the loop." />
-<meta property="og:url" content="https://subzeroclaw.com/" />
-<meta property="og:image" content="https://subzeroclaw.com/og.png?v=2" />
-<meta property="og:image:type" content="image/png" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="SubZeroClaw — an agent small enough to run anywhere. 1,400 lines of C, 90 KB, ~2 MB RAM, 2 deps." />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="SubZeroClaw — an agent small enough to run anywhere" />
-<meta name="twitter:description" content="A minimal agent runtime in C. No framework, just the loop." />
-<meta name="twitter:image" content="https://subzeroclaw.com/og.png?v=2" />
-<meta name="twitter:image:alt" content="SubZeroClaw — an agent small enough to run anywhere." />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='10' fill='%23A84E36'/%3E%3Ccircle cx='12.5' cy='27.5' r='4.2' fill='%2326241F'/%3E%3C/svg%3E" />
-<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SubZeroClaw — her yerde çalışabilecek kadar küçük bir ajan</title>
+<meta content="SubZeroClaw, C ile yazılmış minimal ajan çalışma ortamı: ~1.400 satır, 90 KB ikili dosya, ~2 MB RAM. Framework yok, yalnızca döngü. Her yerde çalışır." name="description"/>
+<link href="https://subzeroclaw.com/tr/" rel="canonical"/>
+<link href="https://subzeroclaw.com/" hreflang="en" rel="alternate"/>
+<link href="https://subzeroclaw.com/es/" hreflang="es" rel="alternate"/>
+<link href="https://subzeroclaw.com/ko/" hreflang="ko" rel="alternate"/>
+<link href="https://subzeroclaw.com/zh/" hreflang="zh-Hans" rel="alternate"/>
+<link href="https://subzeroclaw.com/ru/" hreflang="ru" rel="alternate"/>
+<link href="https://subzeroclaw.com/tr/" hreflang="tr" rel="alternate"/>
+<link href="https://subzeroclaw.com/" hreflang="x-default" rel="alternate"/>
+<meta content="#E9E0D2" name="theme-color"/>
+<meta content="website" property="og:type"/>
+<meta content="tr_TR" property="og:locale"/>
+<meta content="SubZeroClaw" property="og:site_name"/>
+<meta content="SubZeroClaw — her yerde çalışabilecek kadar küçük bir ajan" property="og:title"/>
+<meta content="C ile yazılmış minimal bir ajan çalışma ortamı. ~1.400 satır · 90 KB · ~2 MB RAM · 2 bağımlılık. Framework yok, yalnızca döngü." property="og:description"/>
+<meta content="https://subzeroclaw.com/tr/" property="og:url"/>
+<meta content="https://subzeroclaw.com/og-tr.png" property="og:image"/>
+<meta content="image/png" property="og:image:type"/>
+<meta content="1200" property="og:image:width"/>
+<meta content="630" property="og:image:height"/>
+<meta content="SubZeroClaw — her yerde çalışabilecek kadar küçük bir ajan. 1.400 satır C kodu, 90 KB, ~2 MB RAM, 2 bağımlılık." property="og:image:alt"/>
+<meta content="summary_large_image" name="twitter:card"/>
+<meta content="SubZeroClaw — her yerde çalışabilecek kadar küçük bir ajan" name="twitter:title"/>
+<meta content="C ile yazılmış minimal bir ajan çalışma ortamı. Framework yok, yalnızca döngü." name="twitter:description"/>
+<meta content="https://subzeroclaw.com/og-tr.png" name="twitter:image"/>
+<meta content="SubZeroClaw — her yerde çalışabilecek kadar küçük bir ajan." name="twitter:image:alt"/>
+<link href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='10' fill='%23A84E36'/%3E%3Ccircle cx='12.5' cy='27.5' r='4.2' fill='%2326241F'/%3E%3C/svg%3E" rel="icon"/>
+<link href="/favicon-32.png" rel="icon" sizes="32x32" type="image/png"/>
+<link href="/apple-touch-icon.png" rel="apple-touch-icon" sizes="180x180"/>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareSourceCode",
   "name": "SubZeroClaw",
   "alternateName": "SZC",
-  "description": "A minimal agentic runtime in C — ~1,400 lines, a 90KB binary, ~2MB RAM. One skill file plus an LLM plus a shell loop, with no framework. Small enough to run anywhere: edge devices, Raspberry Pi, local automation, and large-scale agent swarms. Designed to run on the unhardcoded LLM router.",
-  "url": "https://subzeroclaw.com/",
+  "description": "C ile yazılmış minimal bir ajan çalışma ortamı: ~1.400 satır, 90 KB’lık bir ikili dosya, ~2 MB RAM. Bir skill dosyası, bir LLM ve bir kabuk döngüsünden ibaret; framework yok. Her yerde çalışabilecek kadar küçük: uç cihazlar, Raspberry Pi, yerel otomasyon ve büyük ölçekli ajan sürüleri. Bir LLM yönlendiricisi olan unhardcoded üzerinde çalışmak üzere tasarlandı.",
+  "url": "https://subzeroclaw.com/tr/",
   "image": "https://subzeroclaw.com/og.png",
   "codeRepository": "https://github.com/genlayerlabs/subzeroclaw",
   "programmingLanguage": "C",
@@ -54,19 +55,23 @@
     "@type": "Organization",
     "name": "GenLayer Labs",
     "url": "https://genlayer.com",
-    "sameAs": ["https://github.com/genlayerlabs", "https://genlayer.com"]
+    "sameAs": [
+      "https://github.com/genlayerlabs",
+      "https://genlayer.com"
+    ]
   },
   "publisher": {
     "@type": "Organization",
     "name": "GenLayer Labs",
     "url": "https://genlayer.com"
   },
-  "keywords": "agentic runtime, AI agent, minimal agent, agent in C, edge AI, embedded agent, Raspberry Pi agent, LLM agent, agentic loop, anti-framework, unhardcoded, LLM router"
+  "keywords": "agentic runtime, AI agent, minimal agent, agent in C, edge AI, embedded agent, Raspberry Pi agent, LLM agent, agentic loop, anti-framework, unhardcoded, LLM router",
+  "inLanguage": "tr"
 }
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&amp;family=Instrument+Sans:ital,wght@0,400;0,500;0,600&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
 <style>
 :root{
   --sand:#E9E0D2; --ink:#33301f; --ink-2:#6b6450; --ink-3:#9a9079;
@@ -187,56 +192,52 @@ footer{border-top:1px solid var(--line)}
 </style>
 </head>
 <body>
-
 <nav><div class="wrap nav-in">
-  <a class="brand" href="./" aria-label="SubZeroClaw home">
-    <svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="10" fill="#A84E36"/><circle cx="12.5" cy="27.5" r="4.2" fill="#26241F"/></svg>
+<a aria-label="SubZeroClaw ana sayfası" class="brand" href="./">
+<svg aria-hidden="true" fill="none" viewbox="0 0 40 40"><circle cx="20" cy="20" fill="#A84E36" r="10"></circle><circle cx="12.5" cy="27.5" fill="#26241F" r="4.2"></circle></svg>
     SubZeroClaw
   </a>
-  <div class="nav-r">
-    <span class="pill hide">v0.1 · MIT</span>
-    <a class="docs" href="https://github.com/genlayerlabs/subzeroclaw#readme">Docs</a>
-    <a href="https://github.com/genlayerlabs/subzeroclaw">GitHub ↗</a>
-    <label class="lang-pick"><span class="vh">Language</span><select data-lang aria-label="Language"><option value="./" lang="en" selected>EN</option><option value="./es/" lang="es">ES</option><option value="./ko/" lang="ko">KO</option><option value="./zh/" lang="zh-Hans">ZH</option><option value="./ru/" lang="ru">RU</option><option value="./tr/" lang="tr">TR</option></select></label>
-  </div>
+<div class="nav-r">
+<span class="pill hide">v0.1 · MIT</span>
+<a class="docs" href="https://github.com/genlayerlabs/subzeroclaw#readme">Belgeler</a>
+<a href="https://github.com/genlayerlabs/subzeroclaw">GitHub ↗</a>
+<label class="lang-pick"><span class="vh">Dil</span><select aria-label="Dil" data-lang=""><option lang="en" value="../">EN</option><option lang="es" value="../es/">ES</option><option lang="ko" value="../ko/">KO</option><option lang="zh-Hans" value="../zh/">ZH</option><option lang="ru" value="../ru/">RU</option><option lang="tr" selected="" value="../tr/">TR</option></select></label>
+</div>
 </div></nav>
-
 <main>
 <section class="hero"><div class="wrap"><div class="grid">
-  <div>
-    <h1>an agent small enough to <em>run anywhere</em></h1>
-    <button class="copy" type="button" data-copied="copied ✓" data-cmd="git clone https://github.com/genlayerlabs/subzeroclaw" aria-label="Copy git clone command">
-      <span class="prompt" aria-hidden="true">$</span>
-      <span class="cmd" translate="no">git clone github.com/genlayerlabs/subzeroclaw</span>
-      <span class="lbl" aria-live="polite">copy</span>
-    </button>
-    <p class="stats">1,400&nbsp;lines&nbsp;of&nbsp;C&nbsp;· 90&nbsp;KB&nbsp;· ~2&nbsp;MB&nbsp;RAM&nbsp;· 2&nbsp;deps</p>
-  </div>
-
-  <div class="orbit-stage">
-    <svg viewBox="25 25 50 50" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A black hole on an eccentric orbit around a sun: it slows and shrinks far away, then accelerates and grows as it whips past the sun, passing behind it and back in front.">
-      <defs>
-        <radialGradient id="sun" cx="38%" cy="33%" r="78%">
-          <stop offset="0%" stop-color="#C9633F"/><stop offset="60%" stop-color="#A84E36"/><stop offset="100%" stop-color="#7E3A22"/>
-        </radialGradient>
-      </defs>
-      <circle class="bh" id="bhBack" r="3.6" cx="50" cy="50"/>
-      <circle cx="50" cy="50" r="15" fill="url(#sun)"/>
-      <circle class="bh" id="bhFront" r="3.6" cx="50" cy="50"/>
-    </svg>
-  </div>
+<div>
+<h1>o kadar küçük bir ajan ki <em>her yerde çalışır</em></h1>
+<button aria-label="git clone komutunu kopyala" class="copy" data-cmd="git clone https://github.com/genlayerlabs/subzeroclaw" data-copied="kopyalandı ✓" type="button">
+<span aria-hidden="true" class="prompt">$</span>
+<span class="cmd" translate="no">git clone github.com/genlayerlabs/subzeroclaw</span>
+<span aria-live="polite" class="lbl">kopyala</span>
+</button>
+<p class="stats">1.400 satır C kodu · 90 KB · ~2 MB RAM · 2 bağımlılık</p>
+</div>
+<div class="orbit-stage">
+<svg aria-label="Bir güneşin çevresinde eksantrik bir yörüngede dolanan kara delik: uzaktayken yavaşlayıp küçülüyor, sonra hızlanıp büyüyerek güneşin yanından fırlıyor; önce arkasından geçiyor, ardından yeniden önüne çıkıyor." preserveaspectratio="xMidYMid meet" role="img" viewbox="25 25 50 50">
+<defs>
+<radialgradient cx="38%" cy="33%" id="sun" r="78%">
+<stop offset="0%" stop-color="#C9633F"></stop><stop offset="60%" stop-color="#A84E36"></stop><stop offset="100%" stop-color="#7E3A22"></stop>
+</radialgradient>
+</defs>
+<circle class="bh" cx="50" cy="50" id="bhBack" r="3.6"></circle>
+<circle cx="50" cy="50" fill="url(#sun)" r="15"></circle>
+<circle class="bh" cx="50" cy="50" id="bhFront" r="3.6"></circle>
+</svg>
+</div>
 </div></div></section>
-
-<section class="loop" aria-labelledby="loop-h"><div class="wrap">
-  <div class="loop-grid">
-    <div>
-      <h2 id="loop-h" translate="no">skill.md <span class="op">+</span> llm <span class="op">+</span> shell <span class="op">+</span> loop</h2>
-      <p>Describe the job in a markdown file. SubZeroClaw puts it in the system prompt, calls the model, runs the shell command the model asks for, and repeats until the job is done.</p>
-      <p>The shell is the only tool, so everything already installed on the machine (<code>git</code>, <code>curl</code>, <code>jq</code>, <code>ffmpeg</code>) is an integration you don't have to write.</p>
-      <p>Model choice, prompt caching and context compaction live in the <a href="https://github.com/genlayerlabs/unhardcoded">unhardcoded</a> router, so the loop stays small and never pauses to summarize.</p>
-    </div>
-    <div>
-<pre class="term" aria-label="Quickstart" tabindex="0" translate="no"><span class="p">$ </span>git clone https://github.com/genlayerlabs/subzeroclaw
+<section aria-labelledby="loop-h" class="loop"><div class="wrap">
+<div class="loop-grid">
+<div>
+<h2 id="loop-h" translate="no">skill.md <span class="op">+</span> llm <span class="op">+</span> shell <span class="op">+</span> loop</h2>
+<p>Yapılacak işi bir markdown dosyasında anlatın. SubZeroClaw bu dosyayı sistem istemine ekler, modeli çağırır, modelin istediği kabuk komutunu çalıştırır ve iş bitene kadar başa döner.</p>
+<p>Tek araç kabuk olduğundan makinede zaten kurulu olan her şey (<code>git</code>, <code>curl</code>, <code>jq</code>, <code>ffmpeg</code>), yazmanız gerekmeyen bir entegrasyondur.</p>
+<p>Model seçimi, istem önbellekleme ve bağlam sıkıştırma <a href="https://github.com/genlayerlabs/unhardcoded">unhardcoded</a> yönlendiricisinin işi; böylece döngü küçük kalır ve özetlemek için hiç durmaz.</p>
+</div>
+<div>
+<pre aria-label="Hızlı başlangıç" class="term" tabindex="0" translate="no"><span class="p">$ </span>git clone https://github.com/genlayerlabs/subzeroclaw
 <span class="p">$ </span>cd subzeroclaw &amp;&amp; make
 <span class="p">$ </span>mkdir -p ~/.subzeroclaw/skills
 <span class="p">$ </span>cat &gt; ~/.subzeroclaw/config &lt;&lt;'EOF'
@@ -245,35 +246,31 @@ endpoint      = "https://YOUR-ROUTER/v1/chat/completions"
 request_extra = {"model":"policy:auto","policy_ir":[…]}
 EOF
 <span class="p">$ </span>./subzeroclaw "check disk usage and clean tmp if over 80%"
-<span class="c" translate="yes"># every call and command is logged to ~/.subzeroclaw/logs/</span></pre>
-      <p class="term-note">Config reference, skills and the optional decision controller are in the <a href="https://github.com/genlayerlabs/subzeroclaw#readme">README</a>.</p>
-    </div>
-  </div>
-
-  <div class="warn">
-    <div>
-      <h3>Nothing stands between the model and your shell</h3>
-      <p>No sandbox, no confirmation prompts, no allowlist. Whatever the model decides to run, runs, <code>rm -rf /</code> included. Give it a machine or container you can afford to lose.</p>
-    </div>
-  </div>
-
-  <p class="links"><a href="https://github.com/genlayerlabs/subzeroclaw#readme">Read the README</a><a href="https://github.com/genlayerlabs/subzeroclaw/tree/main/src">Read the source</a><a href="https://github.com/genlayerlabs/subzeroclaw/blob/main/CONTRIBUTING.md">How to contribute</a></p>
+<span class="c" translate="yes"># her çağrı ve her komut ~/.subzeroclaw/logs/ dizinine kaydedilir</span></pre>
+<p class="term-note">Yapılandırma seçenekleri, skill’ler ve isteğe bağlı karar denetleyicisi <a href="https://github.com/genlayerlabs/subzeroclaw#readme">README</a>’de anlatılıyor.</p>
+</div>
+</div>
+<div class="warn">
+<div>
+<h3>Modelle kabuğunuz arasında hiçbir engel yok</h3>
+<p>Sandbox yok, onay istemi yok, izin listesi yok. Model neyi çalıştırmaya karar verirse o çalışır, <code>rm -rf /</code> dahil. Kaybetmeyi göze alabileceğiniz bir makinede ya da konteynerde çalıştırın.</p>
+</div>
+</div>
+<p class="links"><a href="https://github.com/genlayerlabs/subzeroclaw#readme">README’yi okuyun</a><a href="https://github.com/genlayerlabs/subzeroclaw/tree/main/src">Kaynak kodunu okuyun</a><a href="https://github.com/genlayerlabs/subzeroclaw/blob/main/CONTRIBUTING.md">Nasıl katkıda bulunulur</a></p>
 </div></section>
 </main>
-
 <footer><div class="wrap foot-in">
-  <a class="gl" href="https://genlayer.com" aria-label="GenLayer Labs">
-    <svg viewBox="0 0 97.76 91.93" fill="currentColor" aria-hidden="true">
-      <polygon points="44.26 32.35 27.72 67.12 43.29 74.9 0 91.93 44.26 0 44.26 32.35"/>
-      <polygon points="53.5 32.35 70.04 67.12 54.47 74.9 97.76 91.93 53.5 0 53.5 32.35"/>
-      <polygon points="48.64 43.78 58.33 62.94 48.64 67.69 39.47 62.92 48.64 43.78"/>
-    </svg>
+<a aria-label="GenLayer Labs" class="gl" href="https://genlayer.com">
+<svg aria-hidden="true" fill="currentColor" viewbox="0 0 97.76 91.93">
+<polygon points="44.26 32.35 27.72 67.12 43.29 74.9 0 91.93 44.26 0 44.26 32.35"></polygon>
+<polygon points="53.5 32.35 70.04 67.12 54.47 74.9 97.76 91.93 53.5 0 53.5 32.35"></polygon>
+<polygon points="48.64 43.78 58.33 62.94 48.64 67.69 39.47 62.92 48.64 43.78"></polygon>
+</svg>
     GenLayer Labs
   </a>
-  <nav class="foot-langs" aria-label="Language"><a href="./" hreflang="en" lang="en" aria-current="page">English</a><a href="./es/" hreflang="es" lang="es">Español</a><a href="./ko/" hreflang="ko" lang="ko">한국어</a><a href="./zh/" hreflang="zh-Hans" lang="zh-Hans">简体中文</a><a href="./ru/" hreflang="ru" lang="ru">Русский</a><a href="./tr/" hreflang="tr" lang="tr">Türkçe</a></nav>
-  <div class="foot-c">© 2026 GenLayer Labs · MIT License</div>
+<nav aria-label="Dil" class="foot-langs"><a href="../" hreflang="en" lang="en">English</a><a href="../es/" hreflang="es" lang="es">Español</a><a href="../ko/" hreflang="ko" lang="ko">한국어</a><a href="../zh/" hreflang="zh-Hans" lang="zh-Hans">简体中文</a><a href="../ru/" hreflang="ru" lang="ru">Русский</a><a aria-current="page" href="../tr/" hreflang="tr" lang="tr">Türkçe</a></nav>
+<div class="foot-c">© 2026 GenLayer Labs · MIT Lisansı</div>
 </div></footer>
-
 <script>
 /* Black hole on a real Kepler orbit (sun at a focus), ¾ view.
    Position solved per-frame via Newton-Raphson on Kepler's equation so velocity
@@ -328,6 +325,6 @@ EOF
   if(s) s.addEventListener('change', function(){ location.href=s.value; });
 })();
 </script>
-<script src="/langbar.js" defer></script>
+<script defer="" src="/langbar.js"></script>
 </body>
 </html>

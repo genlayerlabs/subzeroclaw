@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "i18n/**"
+      - "tools/i18n.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -28,6 +30,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The translated pages must come from the current English page and translations.
+      # On a mismatch the job stops here and the last good version stays live.
+      - name: Refuse stale translations
+        run: python3 tools/i18n.py check
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
@@ -39,3 +46,12 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # Every version served right: 200s, /es -> /es/, lang, title, canonical, hreflang
+      - name: Verify the live languages
+        run: |
+          for i in 1 2 3 4 5; do
+            python3 tools/i18n.py verify "${{ steps.deployment.outputs.page_url }}" && exit 0
+            sleep 30
+          done
+          exit 1

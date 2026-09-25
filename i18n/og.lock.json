@@ -1,0 +1,26 @@
+{
+ "en": {
+  "source": "4b48db292e5da46186f4c111fe985622727dcf0e599de155ec78f28a7350cd90",
+  "png": "97f639acac2c81d981a4843cc311c1b5f3530a81db6f67937a5fbd85e5b7f3ae"
+ },
+ "es": {
+  "source": "c0ff12f7dff97204f0382ba4250b088b8587ae2a635d94b8c9cd342a92c6aeec",
+  "png": "aa0cfaf4f926418109d6e7a29a8179fd7f8aaf8432e35cfc4826101aed3ac8b7"
+ },
+ "ko": {
+  "source": "1c0ad0ae3e2bb58421f7f0d121f427e109a9c2cfa7d9a7d8fec5fb7b63d752c1",
+  "png": "84bbcb5fa3bda11f3e212fc50e6a2dd160a181c6400dbce8007853b1d9860857"
+ },
+ "zh": {
+  "source": "c9a4c8e7d4b6954c71f7f0da9474f3813cc24d8fc02368c9f9426eb62064d3e3",
+  "png": "58e0b11aaf431251d76350b8ba22cb9ff6587f30dd5bf0c1bba408c4abbc27ac"
+ },
+ "ru": {
+  "source": "6352e738b425ce55aedc81f70a65d8f1017b740ad4d9be7c6ce09e740e3e8ca4",
+  "png": "ca81aed3929214e9faab7a6daa942c26c95ecfcb10fb113759b22313111d3710"
+ },
+ "tr": {
+  "source": "3ad92b4fdf120fe00980d2cdb7d136824969c7f987a034aaa3c3960cc74ba969",
+  "png": "0c429efce4d774d09472a7e4cfe0094ae66c0d212ac673ffb1938ede330d527d"
+ }
+}

@@ -1,0 +1,262 @@
+[
+ {
+  "id": "240a36d8",
+  "kind": "meta",
+  "en": "SubZeroClaw — an agent small enough to run anywhere",
+  "where": [
+   "head <title>",
+   "head meta og:title",
+   "head meta twitter:title"
+  ]
+ },
+ {
+  "id": "5da16d26",
+  "kind": "meta",
+  "en": "SubZeroClaw is a minimal agent runtime in C: ~1,400 lines, a 90 KB binary, ~2 MB RAM. No framework, just the loop. Small enough to run anywhere.",
+  "where": [
+   "head meta description"
+  ]
+ },
+ {
+  "id": "7fe944e0",
+  "kind": "meta",
+  "en": "A minimal agent runtime in C. ~1,400 lines · 90KB · ~2MB RAM · 2 deps. No framework, just the loop.",
+  "where": [
+   "head meta og:description"
+  ]
+ },
+ {
+  "id": "391ed594",
+  "kind": "meta",
+  "en": "SubZeroClaw — an agent small enough to run anywhere. 1,400 lines of C, 90 KB, ~2 MB RAM, 2 deps.",
+  "where": [
+   "head meta og:image:alt"
+  ]
+ },
+ {
+  "id": "c6149f70",
+  "kind": "meta",
+  "en": "A minimal agent runtime in C. No framework, just the loop.",
+  "where": [
+   "head meta twitter:description"
+  ]
+ },
+ {
+  "id": "7abad043",
+  "kind": "meta",
+  "en": "SubZeroClaw — an agent small enough to run anywhere.",
+  "where": [
+   "head meta twitter:image:alt"
+  ]
+ },
+ {
+  "id": "03765c8f",
+  "kind": "meta",
+  "en": "A minimal agentic runtime in C — ~1,400 lines, a 90KB binary, ~2MB RAM. One skill file plus an LLM plus a shell loop, with no framework. Small enough to run anywhere: edge devices, Raspberry Pi, local automation, and large-scale agent swarms. Designed to run on the unhardcoded LLM router.",
+  "where": [
+   "structured data: description"
+  ]
+ },
+ {
+  "id": "68a41942",
+  "kind": "html",
+  "en": "Docs",
+  "where": [
+   "a.docs < div.nav-r < div.wrap.nav-in < nav"
+  ]
+ },
+ {
+  "id": "89b86ab0",
+  "kind": "html",
+  "en": "Language",
+  "where": [
+   "span.vh < label.lang-pick < div.nav-r < div.wrap.nav-in",
+   "select < label.lang-pick < div.nav-r < div.wrap.nav-in [aria-label]",
+   "nav.foot-langs < div.wrap.foot-in < footer [aria-label]"
+  ]
+ },
+ {
+  "id": "4eed1542",
+  "kind": "html",
+  "en": "an agent small enough to <em>run anywhere</em>",
+  "where": [
+   "h1 < div < div.grid < div.wrap"
+  ]
+ },
+ {
+  "id": "f84e2e2d",
+  "kind": "html",
+  "en": "copy",
+  "where": [
+   "span.lbl < button.copy < div < div.grid"
+  ]
+ },
+ {
+  "id": "1f77c53c",
+  "kind": "html",
+  "en": "1,400 lines of C · 90 KB · ~2 MB RAM · 2 deps",
+  "where": [
+   "p.stats < div < div.grid < div.wrap"
+  ]
+ },
+ {
+  "id": "a1bbbaff",
+  "kind": "html",
+  "en": "Describe the job in a markdown file. SubZeroClaw puts it in the system prompt, calls the model, runs the shell command the model asks for, and repeats until the job is done.",
+  "where": [
+   "p < div < div.loop-grid < div.wrap"
+  ]
+ },
+ {
+  "id": "e764c232",
+  "kind": "html",
+  "en": "The shell is the only tool, so everything already installed on the machine (<code>git</code>, <code>curl</code>, <code>jq</code>, <code>ffmpeg</code>) is an integration you don't have to write.",
+  "where": [
+   "p < div < div.loop-grid < div.wrap"
+  ]
+ },
+ {
+  "id": "781a29e4",
+  "kind": "html",
+  "en": "Model choice, prompt caching and context compaction live in the <a href=\"https://github.com/genlayerlabs/unhardcoded\">unhardcoded</a> router, so the loop stays small and never pauses to summarize.",
+  "where": [
+   "p < div < div.loop-grid < div.wrap"
+  ]
+ },
+ {
+  "id": "ea54177d",
+  "kind": "html",
+  "en": "# every call and command is logged to ~/.subzeroclaw/logs/",
+  "where": [
+   "span.c < pre.term < div < div.loop-grid"
+  ]
+ },
+ {
+  "id": "8f295ae5",
+  "kind": "html",
+  "en": "Config reference, skills and the optional decision controller are in the <a href=\"https://github.com/genlayerlabs/subzeroclaw#readme\">README</a>.",
+  "where": [
+   "p.term-note < div < div.loop-grid < div.wrap"
+  ]
+ },
+ {
+  "id": "172cf448",
+  "kind": "html",
+  "en": "Nothing stands between the model and your shell",
+  "where": [
+   "h3 < div < div.warn < div.wrap"
+  ]
+ },
+ {
+  "id": "06779798",
+  "kind": "html",
+  "en": "No sandbox, no confirmation prompts, no allowlist. Whatever the model decides to run, runs, <code>rm -rf /</code> included. Give it a machine or container you can afford to lose.",
+  "where": [
+   "p < div < div.warn < div.wrap"
+  ]
+ },
+ {
+  "id": "9f5acfe3",
+  "kind": "html",
+  "en": "Read the README",
+  "where": [
+   "a < p.links < div.wrap < section.loop"
+  ]
+ },
+ {
+  "id": "83fa1315",
+  "kind": "html",
+  "en": "Read the source",
+  "where": [
+   "a < p.links < div.wrap < section.loop"
+  ]
+ },
+ {
+  "id": "407a2341",
+  "kind": "html",
+  "en": "How to contribute",
+  "where": [
+   "a < p.links < div.wrap < section.loop"
+  ]
+ },
+ {
+  "id": "b4d900a0",
+  "kind": "html",
+  "en": "© 2026 GenLayer Labs · MIT License",
+  "where": [
+   "div.foot-c < div.wrap.foot-in < footer"
+  ]
+ },
+ {
+  "id": "ad02f24c",
+  "kind": "attr",
+  "en": "SubZeroClaw home",
+  "where": [
+   "a.brand < div.wrap.nav-in < nav [aria-label]"
+  ]
+ },
+ {
+  "id": "b1fd23a4",
+  "kind": "attr",
+  "en": "Copy git clone command",
+  "where": [
+   "button.copy < div < div.grid < div.wrap [aria-label]"
+  ]
+ },
+ {
+  "id": "f6ff13e3",
+  "kind": "attr",
+  "en": "A black hole on an eccentric orbit around a sun: it slows and shrinks far away, then accelerates and grows as it whips past the sun, passing behind it and back in front.",
+  "where": [
+   "svg < div.orbit-stage < div.grid < div.wrap [aria-label]"
+  ]
+ },
+ {
+  "id": "d07133c8",
+  "kind": "attr",
+  "en": "Quickstart",
+  "where": [
+   "pre.term < div < div.loop-grid < div.wrap [aria-label]"
+  ]
+ },
+ {
+  "id": "2d3ef67f",
+  "kind": "attr",
+  "en": "copied ✓",
+  "where": [
+   "button.copy < div < div.grid < div.wrap [data-copied]"
+  ]
+ },
+ {
+  "id": "29cf5d8c",
+  "kind": "text",
+  "en": "this path ran somewhere we can't reach.",
+  "where": [
+   "404.html message"
+  ]
+ },
+ {
+  "id": "4bee1489",
+  "kind": "js",
+  "en": "This page is also available in English.",
+  "where": [
+   "langbar.js msg: suggestion bar, shown to visitors whose browser prefers this language"
+  ]
+ },
+ {
+  "id": "0991c336",
+  "kind": "js",
+  "en": "Read it in English",
+  "where": [
+   "langbar.js go: suggestion bar, shown to visitors whose browser prefers this language"
+  ]
+ },
+ {
+  "id": "70afe9ef",
+  "kind": "js",
+  "en": "Dismiss",
+  "where": [
+   "langbar.js close: suggestion bar, shown to visitors whose browser prefers this language"
+  ]
+ }
+]
