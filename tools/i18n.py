@@ -4,7 +4,8 @@
   python3 tools/i18n.py extract        # English page + JS strings -> i18n/en.json (the catalogue)
   python3 tools/i18n.py build          # i18n/<lang>.json -> site/<dir>/index.html, langbar.js, 404 strings,
                                        #   sitemap.xml, then i18n/build.lock.json (the fingerprint)
-  python3 tools/i18n.py check          # deploy guard: the fingerprint still matches the sources and outputs
+  node tools/og.cjs                    # share images og.png / og-<lang>.png from each built page's headline
+  python3 tools/i18n.py check          # deploy guard: fingerprint and share images still match the sources
   python3 tools/i18n.py verify <base>  # every version served right: 200s, slash redirects, lang/title/canonical
 
 English (site/index.html) is the single source. Every element with its own text becomes one catalogue
@@ -26,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / 'site'
 I18N = Path(os.environ.get('I18N_DIR', ROOT / 'i18n'))
 LOCK = I18N / 'build.lock.json'
+OG_LOCK = I18N / 'og.lock.json'  # written by tools/og.cjs
 ORIGIN = 'https://subzeroclaw.com/'
 # code, directory, og:locale, name
 LANGS = [('en', '', 'en_US', 'English'), ('es', 'es/', 'es_ES', 'Español'), ('ko', 'ko/', 'ko_KR', '한국어'),
@@ -310,7 +312,16 @@ def fingerprint():
     """Hashes of the English template, the catalogue, every translation and every generated file."""
     files = ['site/index.html', 'i18n/en.json'] + [f'i18n/{d.strip("/")}.json' for _, d, *_ in LANGS[1:]] \
         + [f'site/{d}index.html' for _, d, *_ in LANGS[1:]] + ['site/404.html', 'site/langbar.js', 'site/sitemap.xml']
-    return {f: sha(ROOT / f) for f in files}
+    return {'files': {f: sha(ROOT / f) for f in files},
+            'og_sources': {(d.strip('/') or 'en'): og_source(SITE / d / 'index.html') for _, d, *_ in LANGS}}
+
+
+def og_source(page):
+    """What a share image shows (headline + stats), hashed; tools/og.cjs computes the same from the same page."""
+    html = Path(page).read_text()
+    h1 = re.search(r'<h1>([\s\S]*?)</h1>', html).group(1)
+    stats = re.search(r'<p class="stats">([\s\S]*?)</p>', html).group(1)
+    return hashlib.sha256((h1 + '|' + stats).encode()).hexdigest()
 
 
 def check():
@@ -319,16 +330,25 @@ def check():
         sys.exit('No i18n/build.lock.json: run `tools/i18n.py build` before deploying.')
     want = json.loads(LOCK.read_text())
     bad = []
-    for f, h in want.items():
+    for f, h in want['files'].items():
         p = ROOT / f
         if not p.exists():
             bad.append(f'{f} is missing')
         elif sha(p) != h:
             bad.append(f'{f} changed since the last build')
+    # share images: rendered from the current headline and stats, and not edited since
+    og = json.loads(OG_LOCK.read_text()) if OG_LOCK.exists() else {}
+    for key, src in want['og_sources'].items():
+        png = SITE / ('og.png' if key == 'en' else f'og-{key}.png')
+        got = og.get(key, {})
+        if got.get('source') != src:
+            bad.append(f'{png.name} shows an old headline or stats: run `node tools/og.cjs`')
+        elif not png.exists() or sha(png) != got.get('png'):
+            bad.append(f'{png.name} changed since tools/og.cjs rendered it')
     if bad:
         sys.exit('Stale translations, not deploying:\n  ' + '\n  '.join(bad)
-                 + '\nEdit English, then: extract, translate the ids it reports, build, run the checks.')
-    print(f'i18n fingerprint ok ({len(want)} files)')
+                 + '\nEdit English, then: extract, translate the ids it reports, build, node tools/og.cjs, run the checks.')
+    print(f"i18n fingerprint ok ({len(want['files'])} files, {len(want['og_sources'])} share images)")
 
 
 def verify(base):
